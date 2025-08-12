@@ -1,0 +1,66 @@
+---
+title: "readreports"
+author: "Dorothy Bishop"
+date: "2025-08-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(readtext)
+library("xlsx")
+
+```
+
+```{r makedataframe}
+bigdf <- data.frame(matrix(NA,nrow=1000,ncol=4))
+names(bigdf)<-c("ID","N","code1", "text")
+```
+
+```{r readdoc}
+
+docfolder <- "~/Dropbox/Fraud etc/Maria/PLOS Med draft/revs"
+fl <- list.files(docfolder,".docx")
+w<-which(fl=='R001.docx')
+fl<-fl[-(1:(w-1))]
+
+row1<-0
+for (f in 1:length(fl)){
+  
+  row1<-row1+1
+  sample_file <- paste0(docfolder,"/",fl[f])
+  r<-readtext(sample_file)
+  thistext<-r$text
+  
+  #add to data frame with col for filename, code and text
+  
+  myr<-gsub('. ',"\n",thistext,fixed=TRUE)  
+  
+  s<-unlist(strsplit(myr,"\n"))
+  #Remove unwanted characters
+  s<-gsub('-','',s) #get rid of initial dash: this creates problems with excel
+  
+  thisrow<-1
+  for (t in 1:length(s)){
+    
+    bigdf$ID[row1]<-substr(fl[f],1,4)
+    mynchar<-nchar(s[t])
+    if(mynchar==1)
+    {bigdf[row1,3]<-s[t]} #this is a one character code
+    if(mynchar>1)
+    {bigdf[row1,4]<-s[t]
+    bigdf[row1,2]<-thisrow
+    thisrow<-thisrow+1
+    row1<-row1+1}
+  }
+}
+
+write.xlsx(bigdf, 'allrevs.xlsx', sheetName = "Reviews", 
+           col.names = TRUE, row.names = TRUE, append = FALSE)
+```
+
+
+
+
+
+

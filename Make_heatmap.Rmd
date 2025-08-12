@@ -1,0 +1,130 @@
+---
+title: "tryanalysis"
+author: "Dorothy Bishop"
+date: "2025-08-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(here)
+require(TSDT) #for unfactor function
+require(cowplot)
+require(stringr)
+require(ggpubr) #organise plots
+library(reshape) #for melt function for geom
+library(officer) #for reading word files
+```
+
+
+We'll first try to make a heatmap with N citations for each reference in the PMID list, according to the 3 reviewers who each did around 11 refs for MDPI
+
+So first try to read the big file. 
+
+```{r readfiles}
+df <- read.csv('Coded_reviews.csv')
+saveRDS(df, file = "dfimported.rds")
+#we'll cut out unwanted columns
+wantcols <- c('REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
+              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
+df<-df[,wantcols]
+names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
+
+#only retain those that were coded
+
+df<-df[nchar(df$Boilerplate)>0,]
+
+pmids <- read.csv('pmidlist3.csv')
+pmids<-pmids$PMID
+w<-which(pmids=='') #kludge - can't get rid of last blank one in original file!
+if(length(w)>0){pmids<-pmids[-w]}
+w<-which(pmids=='without PMID') #kludge - can't get rid of last blank one in original file!
+if(length(w)>0){pmids<-pmids[-w]}
+
+bplate <- read.csv('boilerplate.csv')
+w<-which(bplate$content=='nongeneric')
+
+bplate<-bplate[-w,]
+w<-which(bplate$label=='') #kludge - can't get rid of last blank one in original file!
+if(length(w)>0){bplate<-bplate[-w]}
+bplates<-bplate$label
+
+```
+
+Now we count for each reviewer how many times they cite each PMID; result will be a table with reviewer along the top, PMIDs down the side, and body showing N entries
+
+```{r maketable}
+allrevs<-unique(df$Reviewer)
+mytab<-data.frame(matrix(0,nrow=length(pmids),ncol=(1+length(allrevs))))
+names(mytab)<-c('PMID',allrevs)
+mytab$PMID<-pmids
+
+
+ for (i in 1:length(pmids)){
+  for (a in 1:length(allrevs)){
+  myset <- df$PMID[df$Reviewer==allrevs[a]]
+    for (s in 1:length(myset)){
+    g <- grep(pmids[i],myset[s])
+    if(length(g)>0)
+      {mytab[i,(a+1)]<-mytab[i,(a+1)]+1}
+    }
+  }
+ }
+
+
+```
+
+Same basic code should also work with boilerplate
+```{r maketable2}
+
+allrevs<-unique(df$Reviewer)
+mytabx<-data.frame(matrix(0,nrow=length(bplates),ncol=(1+length(allrevs))))
+names(mytabx)<-c('bplate',allrevs)
+mytabx$bplate<-bplate$coded
+
+
+ for (i in 1:length(bplates)){
+  for (a in 1:length(allrevs)){
+  myset <- df$Boilerplate[df$Reviewer==allrevs[a]]
+    for (s in 1:length(myset)){
+    g <- grep(bplates[i],myset[s])
+    if(length(g)>0)
+      {mytabx[i,(a+1)]<-mytabx[i,(a+1)]+1}
+    }
+  }
+ }
+
+
+```
+
+```{r trygeomtile}
+
+thistab<-mytab #for PMIDS
+#thistab<-mytabx # for boilerplates
+# Data 
+nrevs<-length(allrevs)
+mytab2<-as.matrix(thistab[,2:(nrevs+1)])
+
+# Transform the matrix in long format
+dfm<- melt(mytab2)
+dfm$X1<-thistab[,1] #copies labels into 1st col
+
+
+colnames(dfm) <- c("x", "y","value")
+
+
+
+# Plot heatmap with values
+g <- ggplot(dfm, aes(x = y, y = x, fill = value, label = value)) +
+  geom_tile(color = "white") + # Create heatmap
+  geom_text(color = "black", size = 2) + # Add text labels
+  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + # Labels
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
+
+g
+```
+
