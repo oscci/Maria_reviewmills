@@ -1,0 +1,42 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(readtext)
+library("xlsx")
+require(flextable)
+#I've modified some codes manually so want to recreate the docx files.
+
+
+```
+
+```{r readfile,include=FALSE}
+mydf<-read.xlsx('allrevs_14Aug.xlsx', sheetName = "Reviews")
+allcodes<-unique(mydf$ID)
+w<-which(is.na(allcodes))
+allcodes<-allcodes[-w]
+
+allfiles<-list.files("exported_reports")
+thisnum<-length(allfiles)+1
+
+
+w<-which(mydf$ID==allcodes[thisnum])
+thisbit <- mydf[w,4:5]
+myft <- flextable(thisbit)
+border <- fp_border_default()
+myft <- vline(myft, j = c('code1'), border = border, part = "all")
+myft<- hline(myft)
+myft <- set_table_properties(myft,layout="autofit")
+myft
+
+```
+
+`r myft`
+
+

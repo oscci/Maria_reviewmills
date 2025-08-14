@@ -35,6 +35,9 @@ names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
 
 df<-df[nchar(df$Boilerplate)>0,]
 
+
+
+
 pmids <- read.csv('pmidlist3.csv')
 pmids<-pmids$PMID
 w<-which(pmids=='') #kludge - can't get rid of last blank one in original file!
@@ -72,6 +75,7 @@ mytab$PMID<-pmids
   }
  }
 
+#get total revs by reviewer
 
 ```
 
@@ -106,24 +110,28 @@ thistab<-mytab #for PMIDS
 nrevs<-length(allrevs)
 mytab2<-as.matrix(thistab[,2:(nrevs+1)])
 
+revcount<-as.vector(table(df$Reviewer))#N reviews by each reviewer
+revlabels<-paste0(allrevs," \n(",revcount," reviews)")
+
 # Transform the matrix in long format
 dfm<- melt(mytab2)
 dfm$X1<-thistab[,1] #copies labels into 1st col
 
 
-colnames(dfm) <- c("x", "y","value")
+colnames(dfm) <- c("x", "Reviewer","value")
 
 
 
 # Plot heatmap with values
-g <- ggplot(dfm, aes(x = y, y = x, fill = value, label = value)) +
+g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = value)) +
   geom_tile(color = "white") + # Create heatmap
   geom_text(color = "black", size = 2) + # Add text labels
-  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
+  scale_fill_gradient(low = "white", high = "cornflowerblue") + # Set color gradient
   theme_minimal() + # Set theme
-  labs(x = "", y = "") + # Labels
+  labs(x = "", y = "") + 
+ scale_x_discrete(labels=revlabels)+ # Labels
   theme(legend.position = "none")+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
 
 g
 ```
