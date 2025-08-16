@@ -1,0 +1,100 @@
+---
+title: "Untitled"
+author: "Dorothy Bishop"
+date: "2025-08-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(bioregion) #for similarity metrics
+require(ggplot2)
+library("xlsx")
+```
+
+```{r readdf}
+df <- read.xlsx('data set 16Aug.xlsx',sheetIndex=1)
+#saveRDS(df, file = "dfimported.rds")
+
+#remove uncoded
+
+#we'll cut out unwanted columns
+wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
+              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
+df<-df[,wantcols]
+names(df)<-c('ID','Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
+w<-which(is.na(df$Boilerplate))
+df<-df[-w,]
+#only retain those that were coded
+
+df<-df[nchar(df$Boilerplate)>0,]
+
+
+#We'll just disaggregate boilerplate codes, with one column for each unique code
+#Codes assigned uppercase letters, then lowercase (avoiding lowercase l because of confusion with I), then other symbols
+allcodes<-c(LETTERS[1:26],letters[c(1:11,13:26)],'&','^','<','>','$')
+#allcodes excludes £ ,! and @ as these are nongeneric
+
+lena<-length(allcodes)
+codedf<-data.frame(matrix(0,nrow=nrow(df),ncol=(1+lena)))
+names(codedf)<-c('reviewID',allcodes)
+for (i in 1:nrow(df)){
+  thiscode<-df$Boilerplate[i]
+  for (j in 1:lena){
+    g<-grep(allcodes[j],thiscode)
+    if(length(g)>0)
+    {codedf[i,(j+1)]<-length(g)}
+  }
+}
+codedf$reviewID<-df$ID
+
+
+```
+
+
+```{r similarity}
+comat <- as.matrix(codedf[,-1])
+numbits<-as.character(df$ID)
+numbits[1:9]<-paste0('0',numbits[1:9])
+w<-which(nchar(numbits)<3)
+numbits[w]<-paste0('0',numbits[w])
+rownames(comat) <- paste0("Review", numbits)
+colnames(comat) <- allcodes
+
+#sim <- similarity(comat, metric = c("abc", "ABC", "Simpson", "Brayturn"))
+
+sim <- similarity(comat, metric = "Jaccard")
+dsim<-as.data.frame(sim)
+names(dsim)<-c('Review1','Review2','Jaccard')
+
+```
+
+```{r doheatmap}
+# Plot heatmap with values
+g <- ggplot(dsim, aes(x = Review1, y = Review2, fill = Jaccard, label = Jaccard)) +
+  geom_tile(color = "white") + # Create heatmap
+  #geom_text(color = "black", size = 2) + # Add text labels
+  scale_fill_gradient(low = "white", high = "purple") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + 
+# scale_x_discrete(labels=revlabels)+ # Labels
+  theme(legend.position = "none")+
+   theme(axis.text.x = element_text(angle = 90, hjust = 1)) # Rotate x-axis labels
+
+g
+
+```
+
+try pheatmap
+https://bioinformatics.ccr.cancer.gov/docs/data-visualization-with-r/Lesson5_intro_to_ggplot/
+
+```{r trypheat}
+# library(ggplotify) ## to convert pheatmap to ggplot2
+# library(pheatmap)
+# pheatmap(codedf[,2:57])
+
+
+
+heatmap(comat, scale = "none")
+
+```

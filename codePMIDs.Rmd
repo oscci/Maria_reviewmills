@@ -1,0 +1,153 @@
+---
+title: "Code_pmids"
+author: "Dorothy Bishop"
+date: "2025-08-09"
+output: html_document
+---
+
+Reads the list of PMIDs so that can see when a specific reviewer is a coauthor and include this in heatmap
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(here)
+require(TSDT) #for unfactor function ?may not be used
+
+require(stringr)
+require(ggpubr) #organise plots - not currently used
+library(reshape) #for melt function for geom
+library("xlsx") #read and write xlsx files
+
+```
+
+Specify a string without odd characters in it to match to names in PMID list
+
+```{r pmidread}
+reviewers<-c("Giannini","Bogani","D'Oria","Donato","Lagan","Cuccu","D'Aug","Etrusco","Signore","Ganduscio","Sorrentino","Luchese")
+revfull<-c("Giannini","Bogani","D'Oria","Donato","Lagana","Cuccu","D'Auge","Etrusco","Signore","Ganduscio","Sorrentino", "Luchese")
+nrev<-length(reviewers)
+
+pmids <- read.csv('pmidlist3.csv')
+pmids$PMID <-str_trim(pmids$PMID)
+
+temp<-data.frame(matrix(0,nrow=nrow(pmids),ncol=nrev))
+names(temp)<-revfull
+pmids<-cbind(pmids,temp)
+for(i in 1:nrow(pmids)){
+  for(r in 1:nrev){
+    pmids[i,(r+3)]<-0
+   g <- grep(reviewers[r],pmids$authors[i])
+   if(length(g)>0) {pmids[i,(r+3)]<-1}
+   
+  }
+}
+write.xlsx(pmids,"PMIDS_refs.xlsx")
+
+pmidlist<-pmids$PMID
+w<-which(pmidlist=='') #kludge - can't get rid of last blank one in original file!
+if(length(w)>0){pmidlist<-pmidlist[-w]}
+w<-which(pmidlist=='without PMID') #kludge - can't get rid of last blank one in original file!
+if(length(w)>0){pmidlist<-pmidlist[-w]}
+```
+
+```{r readmaindf}
+
+df <- read.csv('Coded_reviews.csv')
+saveRDS(df, file = "dfimported.rds")
+#we'll cut out unwanted columns
+wantcols <- c('REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
+              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
+df<-df[,wantcols]
+names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
+
+#only retain those that were coded
+
+df<-df[nchar(df$Boilerplate)>0,]
+
+```
+
+```{r pmidtable}
+allrevs<-unique(df$Reviewer)
+mytab<-data.frame(matrix(0,nrow=length(pmidlist),ncol=(1+length(allrevs))))
+names(mytab)<-c('PMID',allrevs)
+mytab$PMID<-pmidlist
+
+
+ for (i in 1:length(pmidlist)){
+  for (a in 1:length(allrevs)){
+  myset <- df$PMID[df$Reviewer==allrevs[a]]
+    for (s in 1:length(myset)){
+    g <- grep(pmidlist[i],myset[s])
+    if(length(g)>0)
+      {mytab[i,(a+1)]<-mytab[i,(a+1)]+1}
+    }
+  }
+ }
+
+
+```
+
+```{r trygeomtile}
+
+thistab<-mytab #for PMIDS
+#add the N times PMID was cited in brackets after PMID
+thistab$citecount<-0
+for (i in 1:nrow(df)){
+  for(j in 1:length(pmidlist)){
+      g <- grep(pmidlist[j],df$cited[i])
+        if(length(g)>0)  {thistab$citecount[j]<-thistab$citecount[j]+1}      
+  }
+}
+thistab$PMID<-paste0(thistab$PMID," (",thistab$citecount,")") #incorporate cite count in PMID
+nc<-ncol(thistab) #then delete citecount column
+thistab<-thistab[,-nc]
+nrevs<-length(allrevs)
+mytab2<-as.matrix(thistab[,2:(nrevs+1)])
+
+revcount<-as.vector(table(df$Reviewer))#N reviews by each reviewer
+revlabels<-paste0(allrevs," \n(",revcount," reviews)")
+
+
+
+# Transform the matrix in long format
+dfm<- melt(mytab2)
+dfm$X1<-thistab[,1] #copies labels into 1st col
+
+
+colnames(dfm) <- c("x", "Reviewer","value")
+dfm$isauthor<-0
+#we'll now add a column that indicates if Reviewer was an author on that PMID
+for (i in 1:nrow(dfm)){
+  thisrev<-dfm$Reviewer[i]
+  thisp <- dfm$x[i]
+  plen<-length(thisp)
+  s<-unlist(str_split_1(thisp," "))[[1]]
+  w<-which(pmidlist == s)
+  ww<-which(allrevs==thisrev)
+  dfm$isauthor[i]<-pmids[w,(ww+3)]
+
+}
+  #change isauthor to a colour
+dfm$marker<-''
+dfm$marker[dfm$isauthor==1]<-'*'
+
+dfm$valuex<-paste0(dfm$value,dfm$marker)
+
+```
+
+```{r makemap}
+
+
+# Plot heatmap with values
+g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
+  geom_tile(color = "white") + # Create heatmap
+  geom_text(color = "black", size = 2) + # Add text labels
+  scale_fill_gradient(low = "white", high = "cornflowerblue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + 
+ scale_x_discrete(labels=revlabels)+ # Labels
+  theme(legend.position = "none")+
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
+
+g
+```

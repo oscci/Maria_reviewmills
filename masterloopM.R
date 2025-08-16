@@ -6,8 +6,8 @@ w<-which(is.na(allcodes))
 allcodes<-allcodes[-w]
 
 
-#for(thisrow in 1:length(allcodes)){
-  for(thisrow in 2:6){
+for(thisrow in 1:length(allcodes)){
+
   rowtext<-allcodes[thisrow]
 
   rmarkdown::render("Maria_reports_rewrite.Rmd", output_file=paste0("exported_reports/",rowtext))
