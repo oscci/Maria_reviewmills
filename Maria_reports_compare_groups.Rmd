@@ -1,0 +1,65 @@
+---
+title: "readreports"
+author: "Dorothy Bishop"
+date: "2025-08-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("xlsx")
+library(tidyverse)
+
+```
+
+
+```{r readexcels}
+mycon<-read.xlsx('Controls_reports_coded.xlsx',sheetIndex=1)
+mymain<-read.xlsx('allrevs_17Aug.xlsx',sheetIndex=1)
+
+mycon$isorig<-0
+mycon$isorig[mycon$code=='£']<-1
+mymain$isorig<-0
+mymain$isorig[mymain$code=='£']<-1
+
+mycag<-aggregate(mycon$self_cite,by=list(mycon$CID),FUN=sum)
+mymag<-aggregate(mymain$self_cite,by=list(mymain$ID),FUN=sum)
+
+mycag2<-aggregate(mycon$other_cite,by=list(mycon$CID),FUN=sum)
+mymag2<-aggregate(mymain$other_cite,by=list(mymain$ID),FUN=sum)
+
+mycag3<-aggregate(mycon$other_cite,by=list(mycon$CID),FUN=length)
+mymag3<-aggregate(mymain$other_cite,by=list(mymain$ID),FUN=length)
+
+mycag4<-aggregate(mycon$isorig,by=list(mycon$CID),FUN=sum)
+mymag4<-aggregate(mymain$isorig,by=list(mymain$ID),FUN=sum)
+
+mycag<-cbind('C',mycag,mycag2[,2],mycag3[,2],mycag4[,2])
+mymag<-cbind('M',mymag,mymag2[,2],mymag3[,2],mymag4[,2])
+names(mycag)<-c('Group','ID','Nself','Nother','Nsent','Norig')
+names(mymag)<-c('Group','ID','Nself','Nother','Nsent','Norig')
+
+bothgroups<-rbind(mycag,mymag)
+bothgroups$percorig<-100*bothgroups$Norig/bothgroups$Nsent
+
+selftab<-table(bothgroups$Group,bothgroups$Nself)
+othtab<-table(bothgroups$Group,bothgroups$Nother)
+
+library(dplyr)
+sentlentab<-group_by(bothgroups, Group) %>% 
+summarise(
+  count = n(), 
+  mean = mean(Nsent, na.rm = TRUE),
+  sd = sd(Nsent, na.rm = TRUE)
+  )
+
+origtab<-group_by(bothgroups, Group) %>% 
+summarise(
+  count = n(), 
+  mean = mean(percorig, na.rm = TRUE),
+  sd = sd(percorig, na.rm = TRUE)
+  )
+
+```
+

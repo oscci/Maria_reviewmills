@@ -1,0 +1,124 @@
+---
+title: "tryvenn"
+author: "Dorothy Bishop"
+date: "2025-08-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(ggVennDiagram)
+require(xlsx)
+require(tidyverse)
+```
+
+```{r tryvennwrangle}
+#df<-read.xlsx('AuthorsforVenn.xlsx',sheetIndex=1,startRow=2) #takes a long time!
+#we only need the basics
+#keepcols<-c(3,7,27)
+#df<-df[,keepcols]
+# Save an object to a file
+#saveRDS(df, file = "venndatashort.rds")
+# Restore the object
+df<-readRDS(file = "venndatashort.rds")
+
+newcols<-c("Giannini","Bogani","Lagan","Cuccu","D'Aug","Etrusco","D'Oria","Donato","Signore","Ganduscio","Sorrentino", "Luchese")
+lc<-length(newcols)
+for (i in 4:(3+lc)){
+  df[,i]<-0
+  names(df)
+}
+names(df)[4:(3+lc)]<-newcols
+
+for (i in 1:nrow(df)){
+  for (j in 1:lc){
+    g<-grep(newcols[j],df$Authors[i])
+    if(length(g)>0){
+      df[i,(j+3)]<-1
+    }
+  }
+}
+
+df$allaus<-rowSums(df[,4:15])
+w<-which(df$allaus==0)
+
+df<-df[-w,]  #not sure why these were included if they didn't meet criteria, but htis is a much more believable number - 1553!
+#saveRDS(df, file = "venndatashort1.rds")
+
+ggvenn(df,newcols[1:4])
+
+dfv<-df[4:7]
+ggvenn(dfv)
+
+# draw four-set venn (use A, B, C, D in aes)
+ggVennDiagram(dfv)
+
+# Helper function to display Venn diagram
+display_venn <- function(x, ...){
+  library(VennDiagram)
+  grid.newpage()
+  venn_object <- venn.diagram(x, filename = NULL, ...)
+  grid.draw(venn_object)
+}
+
+display_venn(dfv)
+
+
+
+library("ggVennDiagram")
+ggVennDiagram(dfv, label_alpha = 0)
+
+genes <- paste("gene",1:1000,sep="")
+set.seed(20231214)
+x <- list(A=sample(genes,300),
+          B=sample(genes,525),
+          C=sample(genes,440),
+          D=sample(genes,350))
+library(ggplot2)
+ggVennDiagram(x) + scale_fill_gradient(low="grey90",high = "red")
+
+x
+
+
+
+
+```
+
+
+OK, so we need a string for each reviewers that consists of the unique ID of papers they have coauthored.
+Since there seems a limit of 4, we'll take the most prolific. So first work out how many articles for each
+
+```{r wranglemore}
+revtots<-colSums(df[,4:15])
+
+L<-which(df$Lagan==1)
+B<-which(df$Bogani==1)
+D<-which(df$Donato==1)
+S<-which(df$Signore==1)
+G<-which(df$Giannini==1)
+C<-which(df$Cuccu==1)
+E<-which(df$Etrusco==1)
+A<-which(df[9]==1)
+O<-which(df[,11]==1)
+
+x <- list(A,B,D,G)
+
+myvenn<- ggVennDiagram(x,category.names = c("D'Auge","Bogani","di Donato", "Giannini")) + scale_fill_gradient(low="grey90",high = "red")
+
+x <- list(L,B,D,G)
+myvenn<- ggVennDiagram(x,category.names = c("Lagana","Bogani","di Donato", "Giannini")) + scale_fill_gradient(low="grey90",high = "red")
+
+x <- list(E,B,D,G)
+myvenn<- ggVennDiagram(x,category.names = c("Etrusco","Bogani","di Donato", "Giannini")) + scale_fill_gradient(low="grey90",high = "red")
+
+#Can't do more than 4 as it goes nuts - though it says it does up to 7!
+
+
+```
+
+Totals
+
+Giannini     Bogani      Lagan      Cuccu      D'Aug    Etrusco 
+       163        552        654         55         25         85 
+    D'Oria     Donato    Signore  Ganduscio Sorrentino    Luchese 
+        26        314        168          0         76          0 
