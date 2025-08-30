@@ -20,15 +20,23 @@ library("xlsx") #read and write xlsx files
 
 ```
 
+NB can get authors for each PMID by search in PubMed, it accepts a list of PMIDS separated by OR and you can then export as csv.
+
 Specify a string without odd characters in it to match to names in PMID list
 
 ```{r pmidread}
-reviewers<-c("Giannini","Bogani","D'Oria","Donato","Lagan","Cuccu","D'Aug","Etrusco","Signore","Ganduscio","Sorrentino","Luchese")
-revfull<-c("Giannini","Bogani","D'Oria","Donato","Lagana","Cuccu","D'Auge","Etrusco","Signore","Ganduscio","Sorrentino", "Luchese")
+reviewers<-c("Etrusco","Giannini","Lagan","Signore","Sorrentino","Bogani","Cuccu","D'Oria","Ganduscio","D'Aug","Donato")
+revfull<-c("Andrea Etrusco" ,"Andrea Giannini","Antonio Simone Laganà","Fabrizio Signore","Felice Sorrentino","Giorgio Bogani","Ilaria Cuccu","Ottavia D'Oria","Silvia Ganduscio","Tullio Golia D'Augè","Violante Di Donato")
+
+#we'll just keep those who did at least 2 revs
+revselect<- c(1,2,3,6,7,8,10,11)
+reviewers<-reviewers [revselect]
+revfull <- revfull[revselect]
 nrev<-length(reviewers)
 
-pmids <- read.csv('pmidlist3.csv')
-pmids$PMID <-str_trim(pmids$PMID)
+pmids <- read.csv('PMIDS_with_aus.csv')
+pmids<-pmids[,c(1,3)] #only need PMID and Authors
+#pmids$PMID <-str_trim(pmids$PMID)
 
 temp<-data.frame(matrix(0,nrow=nrow(pmids),ncol=nrev))
 names(temp)<-revfull
@@ -36,41 +44,44 @@ pmids<-cbind(pmids,temp)
 for(i in 1:nrow(pmids)){
   for(r in 1:nrev){
     pmids[i,(r+3)]<-0
-   g <- grep(reviewers[r],pmids$authors[i])
-   if(length(g)>0) {pmids[i,(r+3)]<-1}
+   g <- grep(reviewers[r],pmids$Authors[i])
+   if(length(g)>0) {pmids[i,(r+2)]<-1}
    
   }
 }
 write.xlsx(pmids,"PMIDS_refs.xlsx")
 
-pmidlist<-pmids$PMID
-w<-which(pmidlist=='') #kludge - can't get rid of last blank one in original file!
-if(length(w)>0){pmidlist<-pmidlist[-w]}
-w<-which(pmidlist=='without PMID') #kludge - can't get rid of last blank one in original file!
-if(length(w)>0){pmidlist<-pmidlist[-w]}
+# pmidlist<-pmids$PMID
+# w<-which(pmidlist=='') #kludge - can't get rid of last blank one in original file!
+# if(length(w)>0){pmidlist<-pmidlist[-w]}
+# w<-which(pmidlist=='without PMID') #kludge - can't get rid of last blank one in original file!
+# if(length(w)>0){pmidlist<-pmidlist[-w]}
 ```
 
 ```{r readmaindf}
 
-df <- read.csv('Coded_reviews.csv')
-saveRDS(df, file = "dfimported.rds")
+df <- read.xlsx('Data set 30 Aug.xlsx',sheetIndex=1)
+saveRDS(df, file = "dfimported30Aug.rds")
 #we'll cut out unwanted columns
 wantcols <- c('REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
               'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
 df<-df[,wantcols]
 names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
 
-#only retain those that were coded
+#only retain those that match names
 
-df<-df[nchar(df$Boilerplate)>0,]
+#df<-df[nchar(df$Boilerplate)>0,]
 
 ```
 
 ```{r pmidtable}
-allrevs<-unique(df$Reviewer)
-mytab<-data.frame(matrix(0,nrow=length(pmidlist),ncol=(1+length(allrevs))))
+allrevs<-unique(df$Reviewer)[1:11] #original list of named ones
+allrevs<-allrevs[order(allrevs)] #alphabetic
+allrevs<-allrevs[revselect]
+mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(allrevs))))
 names(mytab)<-c('PMID',allrevs)
-mytab$PMID<-pmidlist
+mytab$PMID<-pmids$PMID
+pmidlist<-pmids$PMID
 
 
  for (i in 1:length(pmidlist)){
@@ -104,9 +115,9 @@ thistab<-thistab[,-nc]
 nrevs<-length(allrevs)
 mytab2<-as.matrix(thistab[,2:(nrevs+1)])
 
-revcount<-as.vector(table(df$Reviewer))#N reviews by each reviewer
-revlabels<-paste0(allrevs," \n(",revcount," reviews)")
 
+revcount<-as.vector(table(df$Reviewer[df$Reviewer %in% revfull]))#N reviews by each reviewer
+revlabels<-paste0(allrevs," \n(",revcount," reviews)")
 
 
 # Transform the matrix in long format
@@ -124,7 +135,7 @@ for (i in 1:nrow(dfm)){
   s<-unlist(str_split_1(thisp," "))[[1]]
   w<-which(pmidlist == s)
   ww<-which(allrevs==thisrev)
-  dfm$isauthor[i]<-pmids[w,(ww+3)]
+  dfm$isauthor[i]<-pmids[w,(ww+2)]
 
 }
   #change isauthor to a colour
@@ -141,13 +152,13 @@ dfm$valuex<-paste0(dfm$value,dfm$marker)
 # Plot heatmap with values
 g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
   geom_tile(color = "white") + # Create heatmap
-  geom_text(color = "black", size = 2) + # Add text labels
+  geom_text(color = "black", size = 1)+ # Add text labels
   scale_fill_gradient(low = "white", high = "cornflowerblue") + # Set color gradient
   theme_minimal() + # Set theme
   labs(x = "", y = "") + 
  scale_x_discrete(labels=revlabels)+ # Labels
   theme(legend.position = "none")+
-   theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate x-axis labels
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=6))+
+  theme(axis.text.y = element_text(size=6))
 
-g
 ```

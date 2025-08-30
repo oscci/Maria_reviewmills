@@ -9,19 +9,22 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 require(readtext)
 library("xlsx")
+library(stringr)
 
 ```
 
-```{r makedataframe}
-bigdf <- data.frame(matrix(NA,nrow=1000,ncol=4))
+
+```{r makedatf}
+bigdf <- data.frame(matrix(NA,nrow=2000,ncol=4))
 names(bigdf)<-c("ID","N","code1", "text")
 ```
 
+
 ```{r readdoc}
 
-docfolder <- "~/Dropbox/Fraud etc/Maria/PLOS Med draft/revs"
-fl <- list.files(docfolder,".docx")
-w<-which(fl=='R001.docx')
+docfolder <- "~/Rprojects/Maria_reviewmills/revs"
+fl <- list.files(docfolder,".docx",all.files=FALSE,recursive=FALSE)
+w<-which(fl=='R001.docx') #ignore any hidden ones preceding 001
 fl<-fl[-(1:(w-1))]
 
 row1<-0
@@ -34,9 +37,15 @@ for (f in 1:length(fl)){
   
   #add to data frame with col for filename, code and text
   
-  myr<-gsub('. ',"\n",thistext,fixed=TRUE)  
+  #This bit splits at . but this creates problems with eg journal names. Main case of this is one journal so we first look for that
+  obbit<-". Clin. Exp. Obstet. Gynecol. "
+  obbit2<- " Clin Exp Obstet Gynecol "
+  thistext<-gsub(obbit,obbit2,thistext)
+ 
+  myr<-gsub('. ',"\n",thistext,fixed=TRUE)  #NB should also split at ? if doing this again
   
   s<-unlist(strsplit(myr,"\n"))
+ 
   #Remove unwanted characters
   s<-gsub('-','',s) #get rid of initial dash: this creates problems with excel
   
@@ -45,15 +54,19 @@ for (f in 1:length(fl)){
     
     bigdf$ID[row1]<-substr(fl[f],1,4)
     mynchar<-nchar(s[t])
-    if(mynchar==1)
-    {bigdf[row1,3]<-s[t]} #this is a one character code
-    if(mynchar>1)
+    if(mynchar<3)
+    {bigdf[row1,3]<-s[t]} #this is a one or two character code
+    if(mynchar>2)
     {bigdf[row1,4]<-s[t]
     bigdf[row1,2]<-thisrow
     thisrow<-thisrow+1
     row1<-row1+1}
   }
 }
+bigdf$text<-str_trim(bigdf$text)
+w<-c(which(bigdf$text=='text'),which(bigdf$text=='code1'))
+if(length(w)>0)
+bigdf<-bigdf[-w,]
 
 write.xlsx(bigdf, 'allrevs.xlsx', sheetName = "Reviews", 
            col.names = TRUE, row.names = TRUE, append = FALSE)
