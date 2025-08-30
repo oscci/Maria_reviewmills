@@ -103,15 +103,21 @@ pmidlist<-pmids$PMID
 thistab<-mytab #for PMIDS
 #add the N times PMID was cited in brackets after PMID
 thistab$citecount<-0
+thistab$trycoerce<-0
 for (i in 1:nrow(df)){
   for(j in 1:length(pmidlist)){
       g <- grep(pmidlist[j],df$cited[i])
-        if(length(g)>0)  {thistab$citecount[j]<-thistab$citecount[j]+1}      
+        if(length(g)>0)  {thistab$citecount[j]<-thistab$citecount[j]+1}   
+      h <- grep(pmidlist[j],df$PMID[i])
+      if(length(h)>0)  {thistab$trycoerce[j]<-thistab$trycoerce[j]+1}
   }
 }
 thistab$PMID<-paste0(thistab$PMID," (",thistab$citecount,")") #incorporate cite count in PMID
-nc<-ncol(thistab) #then delete citecount column
-thistab<-thistab[,-nc]
+
+plot(jitter(thistab$trycoerce),jitter(thistab$citecount))
+
+# nc<-ncol(thistab) #then delete citecount column
+# thistab<-thistab[,-nc]
 nrevs<-length(allrevs)
 mytab2<-as.matrix(thistab[,2:(nrevs+1)])
 
