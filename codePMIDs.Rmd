@@ -6,6 +6,7 @@ output: html_document
 ---
 
 Reads the list of PMIDs so that can see when a specific reviewer is a coauthor and include this in heatmap
+I found it was possible to get all authors by a search of Pubmed with a long list of PMIDs separated by OR. Then export as csv.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -20,43 +21,8 @@ library("xlsx") #read and write xlsx files
 
 ```
 
-NB can get authors for each PMID by search in PubMed, it accepts a list of PMIDS separated by OR and you can then export as csv.
 
-Specify a string without odd characters in it to match to names in PMID list
-
-```{r pmidread}
-reviewers<-c("Etrusco","Giannini","Lagan","Signore","Sorrentino","Bogani","Cuccu","D'Oria","Ganduscio","D'Aug","Donato")
-revfull<-c("Andrea Etrusco" ,"Andrea Giannini","Antonio Simone Laganà","Fabrizio Signore","Felice Sorrentino","Giorgio Bogani","Ilaria Cuccu","Ottavia D'Oria","Silvia Ganduscio","Tullio Golia D'Augè","Violante Di Donato")
-
-#we'll just keep those who did at least 2 revs
-revselect<- c(1,2,3,6,7,8,10,11)
-reviewers<-reviewers [revselect]
-revfull <- revfull[revselect]
-nrev<-length(reviewers)
-
-pmids <- read.csv('PMIDS_with_aus.csv')
-pmids<-pmids[,c(1,3)] #only need PMID and Authors
-#pmids$PMID <-str_trim(pmids$PMID)
-
-temp<-data.frame(matrix(0,nrow=nrow(pmids),ncol=nrev))
-names(temp)<-revfull
-pmids<-cbind(pmids,temp)
-for(i in 1:nrow(pmids)){
-  for(r in 1:nrev){
-    pmids[i,(r+3)]<-0
-   g <- grep(reviewers[r],pmids$Authors[i])
-   if(length(g)>0) {pmids[i,(r+2)]<-1}
-   
-  }
-}
-write.xlsx(pmids,"PMIDS_refs.xlsx")
-
-# pmidlist<-pmids$PMID
-# w<-which(pmidlist=='') #kludge - can't get rid of last blank one in original file!
-# if(length(w)>0){pmidlist<-pmidlist[-w]}
-# w<-which(pmidlist=='without PMID') #kludge - can't get rid of last blank one in original file!
-# if(length(w)>0){pmidlist<-pmidlist[-w]}
-```
+A lot of problems could be overcome if at the outset I changed the reviewer names in the df file so they match those in the PMIDs file.  I'll do that, because at present it is not good to have hard coding.
 
 ```{r readmaindf}
 
@@ -67,17 +33,84 @@ wantcols <- c('REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
               'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
 df<-df[,wantcols]
 names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
-
-#only retain those that match names
-
-#df<-df[nchar(df$Boilerplate)>0,]
+#remove blank row
+w<-which(is.na(df$Reviewer))
+df<-df[-w,]
 
 ```
 
+Decide which reviewers to include; need to have all the 'reviewer' cases together as Anon.
+```{r recodereviewer}
+
+g <- grep('Reviewer',df$Reviewer) #find reviewers with 'Reviewer' in the name
+df$Reviewer[g]<-'_Anon'
+g <- grep('Anon',df$Reviewer)
+df$Reviewer[g]<-'_Anon'
+trev<-table(df$Reviewer)
+
+solos<-names(which(trev==1)) #those with just report will be recoded 'other'
+w<-which(df$Reviewer %in% solos)
+df$Reviewer[w]<-'X_other'
+
+myrevs<-unique(df$Reviewer)
+myrevs<-myrevs[c(1:5,7:9,6,10)] #reorder determined by eye to put Anon and X_other at the end
+
+nrev<-length(myrevs)
+```
+
+
+
+
+```{r pmidread}
+
+
+pmids <- read.csv('PMIDS_with_aus.csv')
+pmids<-pmids[,c(1,3)] #only need PMID and Authors
+#pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
+
+
+```
+
+
+Would be nice to have a list of all the authors of these articles.
+Means splitting col 2 of the pmids; these are comma separated.
+
+```{r getallaus}
+dfauth<-data.frame(matrix(NA,nrow=2000,ncol=2))
+names(dfauth)<-c('PMID','Author')
+thisrow<-0
+for(i in 1:nrow(pmids)){
+    s<-unlist(str_split_1(pmids$Authors[i],","))
+    for (r in 1:length(s)){
+      dfauth$PMID[(thisrow+r)]<-pmids$PMID[i]
+      dfauth$Author[(thisrow+r)]<-trimws(s[r],whitespace="[ .]") #remove stop as well as space
+    }
+    thisrow<-thisrow+length(s)
+    
+}
+w<-which(dfauth$PMID>0)
+dfauth<-dfauth[w,]#remove blanks
+
+autab<-table(dfauth$Author)
+autab<-autab[order(autab,decreasing=T)]
+
+autab[1:20]
+mauthor<-data.frame(autab)
+write.xlsx(dfauth,"Individual_authors_PMID.xlsx")
+write.xlsx(mauthor,"Individual_author_counts.xlsx")
+
+allrevs<- c(names(autab[c(2,7,5,4,1,24,26,109)]),'X_other','_Anon')
+#Had to do this manually because names formatted differently in PMID and in df;
+
+```
+
+
+
+
+
+
 ```{r pmidtable}
-allrevs<-unique(df$Reviewer)[1:11] #original list of named ones
-allrevs<-allrevs[order(allrevs)] #alphabetic
-allrevs<-allrevs[revselect]
+
 mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(allrevs))))
 names(mytab)<-c('PMID',allrevs)
 mytab$PMID<-pmids$PMID
@@ -86,7 +119,7 @@ pmidlist<-pmids$PMID
 
  for (i in 1:length(pmidlist)){
   for (a in 1:length(allrevs)){
-  myset <- df$PMID[df$Reviewer==allrevs[a]]
+  myset <- df$PMID[df$Reviewer==myrevs[a]] #myrevs has orig names
     for (s in 1:length(myset)){
     g <- grep(pmidlist[i],myset[s])
     if(length(g)>0)
@@ -97,6 +130,8 @@ pmidlist<-pmids$PMID
 
 
 ```
+
+
 
 ```{r trygeomtile}
 
@@ -121,8 +156,10 @@ plot(jitter(thistab$trycoerce),jitter(thistab$citecount))
 nrevs<-length(allrevs)
 mytab2<-as.matrix(thistab[,2:(nrevs+1)])
 
-
-revcount<-as.vector(table(df$Reviewer[df$Reviewer %in% revfull]))#N reviews by each reviewer
+#Nightmare getting the names aligned, given different names in the pmid and df files. 
+revorder<-c(3,7,5,9,4,6,8,2,10,1)
+revcount<-as.vector(table(df$Reviewer))[revorder]
+                    
 revlabels<-paste0(allrevs," \n(",revcount," reviews)")
 
 
@@ -132,16 +169,19 @@ dfm$X1<-thistab[,1] #copies labels into 1st col
 
 
 colnames(dfm) <- c("x", "Reviewer","value")
-dfm$isauthor<-0
+dfm$isauthor<-0 #add new column
 #we'll now add a column that indicates if Reviewer was an author on that PMID
 for (i in 1:nrow(dfm)){
-  thisrev<-dfm$Reviewer[i]
+  thisrev<-dfm$Reviewer[i] #this has the short reviewer names from PMID
   thisp <- dfm$x[i]
   plen<-length(thisp)
-  s<-unlist(str_split_1(thisp," "))[[1]]
-  w<-which(pmidlist == s)
-  ww<-which(allrevs==thisrev)
-  dfm$isauthor[i]<-pmids[w,(ww+2)]
+  s<-unlist(str_split_1(thisp," "))[[1]] #remove stuff after blank to get PMID
+  w<-which(dfauth$PMID == s)
+  theseauths<-dfauth$Author[w]
+  ww<-which(theseauths==thisrev)
+  if(length(ww)>0){
+  dfm$isauthor[i]<-1
+  }
 
 }
   #change isauthor to a colour
