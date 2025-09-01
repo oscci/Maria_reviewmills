@@ -1,0 +1,127 @@
+---
+title: "Code_pmids"
+author: "Dorothy Bishop"
+date: "2025-08-09"
+output: html_document
+---
+
+Reads the list of boilerplate codes 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(here)
+require(TSDT) #for unfactor function ?may not be used
+
+require(stringr)
+require(ggpubr) #organise plots - not currently used
+library(reshape) #for melt function for geom
+library("xlsx") #read and write xlsx files
+
+```
+
+
+
+
+```{r readmaindf}
+
+df <- read.xlsx('Data set 30 Aug.xlsx',sheetIndex=1)
+
+#we'll cut out unwanted columns
+wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI')
+df<-df[,wantcols]
+names(df)<-c('ID','Reviewer','Publisher','DOI')
+#remove blank row
+w<-which(is.na(df$Reviewer))
+df<-df[-w,]
+
+
+df$Reviewer<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A",
+                        "Ottavia D'Oria"  ~ "D'Oria O",
+                         "Giorgio Bogani" ~ "Bogani G",
+                        "Violante Di Donato" ~"Di Donato V",
+                        "Antonio Simone Laganà" ~ "Laganà AS",
+                        "Fabrizio Signore" ~ "Signore F",
+                        "Ilaria Cuccu" ~ "Cuccu I",
+                         "Silvia Ganduscio" ~ "Ganduscio S",
+                        "Tullio Golia D'Augè" ~ "D'Augè TG",
+                        "Felice Sorrentino"~"Sorrentino F",
+                        "Andrea Etrusco" ~ "Etrusco A",
+                        "VERONICA LUMIA" ~"Lumia V",
+                        "Gaetano Riemma" ~"Riemma G",
+                        "Doriana Lucchese "~"Lucchese D", #NB space after name
+                       .default = "X_Anon")
+#table(df$Reviewer)
+
+#Remove reviewers with just one review if removesolo =1
+removesolo<-0
+if(removesolo==1){
+
+solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S')
+for (s in 1:length(solorevs)){
+  w<-which(df$Reviewer == solorevs[s])
+  df<-df[-w,]
+}
+}
+
+myrevs<-unique(df$Reviewer)
+
+nrev<-length(myrevs)
+
+```
+
+
+
+
+```{r bigfileread}
+codesdf <- read.xlsx('allrevs_cleaned.xlsx',sheetIndex=1)
+allcodes<-unique(codesdf$code1)
+#pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have #preceding or final blank space
+
+#Need to add column specifying reviewer for each ID
+codesdf$Reviewer<-NA
+codesdf$numID<-as.integer(substring(codesdf$ID,2,4))
+for(i in 1:nrow(df)){
+  thisnum<-df$ID[i]
+  w<-which(codesdf$numID==thisnum)
+  codesdf$Reviewer[w]<-df$Reviewer[i]
+}
+
+
+
+codetab<-as.data.frame.matrix(table(codesdf$Reviewer,codesdf$code1))
+
+
+```
+
+
+```{r domelt}
+mytab2<-as.matrix(codetab)  #need matrix format for melt
+
+# Transform the matrix in long format
+dfm<- melt(mytab2)
+
+colnames(dfm) <- c("Reviewer", "code","value")
+
+
+```
+
+
+```{r revheatmap}
+# Plot heatmap with values
+#censor the data at 5
+w<-which(dfm$value>4)
+dfm$value[w]<-5
+#
+g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = value, color=value)) +
+  geom_tile(color = "white") + # Create heatmap
+  #geom_text(color = "black", size = 3)+ # Add text labels
+  scale_fill_gradient(low = "white", high = "darkblue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + 
+ # Labels
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size=6))+
+  theme(axis.text.x = element_text(size=6))
+
+```

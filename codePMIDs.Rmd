@@ -22,7 +22,7 @@ library("xlsx") #read and write xlsx files
 ```
 
 
-A lot of problems could be overcome if at the outset I changed the reviewer names in the df file so they match those in the PMIDs file.  I'll do that, because at present it is not good to have hard coding.
+A lot of problems could be overcome if at the outset I changed the reviewer names in the df file so they match those in the PMIDs file.  I'll do that, because at present it is not good to have hard coding to align these. 
 
 ```{r readmaindf}
 
@@ -37,23 +37,63 @@ names(df)<-c('Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
 w<-which(is.na(df$Reviewer))
 df<-df[-w,]
 
+#Recode names in df file to be same as in PMID file; can also make rare cases 'other';
+#But for now may be best to keep them despite low N
+# df$Reviewer1<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A", 
+#                         "Ottavia D'Oria"  ~ "D'Oria O",
+#                          "Giorgio Bogani" ~ "Bogani G",
+#                         "Violante Di Donato" ~"Di Donato V",
+#                         "Antonio Simone Laganà" ~ "Laganà AS",
+#                         "Fabrizio Signore" ~ "X_other",
+#                         "Ilaria Cuccu" ~ "Cuccu I",
+#                          "Silvia Ganduscio" ~ "X_other",
+#                         "Tullio Golia D'Augè" ~ "D'Augè TG",
+#                         "Felice Sorrentino"~"X_other",
+#                         "Andrea Etrusco" ~ "Etrusco A",
+#                         "VERONICA LUMIA" ~"X_other",
+#                         "Gaetano Riemma" ~"X_other",
+#                         "Doriana Lucchese "~"X_other",
+#                        .default = "_Anon")
+
+
+df$Reviewer<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A",
+                        "Ottavia D'Oria"  ~ "D'Oria O",
+                         "Giorgio Bogani" ~ "Bogani G",
+                        "Violante Di Donato" ~"Di Donato V",
+                        "Antonio Simone Laganà" ~ "Laganà AS",
+                        "Fabrizio Signore" ~ "Signore F",
+                        "Ilaria Cuccu" ~ "Cuccu I",
+                         "Silvia Ganduscio" ~ "Ganduscio S",
+                        "Tullio Golia D'Augè" ~ "D'Augè TG",
+                        "Felice Sorrentino"~"Sorrentino F",
+                        "Andrea Etrusco" ~ "Etrusco A",
+                        "VERONICA LUMIA" ~"Lumia V",
+                        "Gaetano Riemma" ~"Riemma G",
+                        "Doriana Lucchese "~"Lucchese D", #NB space after name
+                       .default = "X_Anon")
+table(df$Reviewer)
+
+#Remove reviewers with just one review
+solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S')
+for (s in 1:length(solorevs)){
+  w<-which(df$Reviewer == solorevs[s])
+  df<-df[-w,]
+}
 ```
 
 Decide which reviewers to include; need to have all the 'reviewer' cases together as Anon.
 ```{r recodereviewer}
 
-g <- grep('Reviewer',df$Reviewer) #find reviewers with 'Reviewer' in the name
-df$Reviewer[g]<-'_Anon'
-g <- grep('Anon',df$Reviewer)
-df$Reviewer[g]<-'_Anon'
-trev<-table(df$Reviewer)
 
+trev<-table(df$Reviewer)
+makeother<-0
+if (makeother==1){
 solos<-names(which(trev==1)) #those with just report will be recoded 'other'
 w<-which(df$Reviewer %in% solos)
 df$Reviewer[w]<-'X_other'
+}
 
 myrevs<-unique(df$Reviewer)
-myrevs<-myrevs[c(1:5,7:9,6,10)] #reorder determined by eye to put Anon and X_other at the end
 
 nrev<-length(myrevs)
 ```
@@ -99,9 +139,6 @@ mauthor<-data.frame(autab)
 write.xlsx(dfauth,"Individual_authors_PMID.xlsx")
 write.xlsx(mauthor,"Individual_author_counts.xlsx")
 
-allrevs<- c(names(autab[c(2,7,5,4,1,24,26,109)]),'X_other','_Anon')
-#Had to do this manually because names formatted differently in PMID and in df;
-
 ```
 
 
@@ -111,15 +148,24 @@ allrevs<- c(names(autab[c(2,7,5,4,1,24,26,109)]),'X_other','_Anon')
 
 ```{r pmidtable}
 
-mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(allrevs))))
-names(mytab)<-c('PMID',allrevs)
+mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(myrevs))))
+
 mytab$PMID<-pmids$PMID
 pmidlist<-pmids$PMID
+
+#Remarkably convoluted to get the N reviews for each reviewer in the right order! 
+#This seems to work without needing hard coding.
+revcount<-as.data.frame.matrix(t(table(df$Reviewer)))
+allrevs<-names(revcount) #revs in the order we can use for creating name with count
+nrevs<-length(allrevs)    
+names(mytab)<-c('PMID',allrevs)
+mytab$PMID<-pmids$PMID
+revlabels<-paste0(allrevs," \n(",revcount[1,]," reviews)")
 
 
  for (i in 1:length(pmidlist)){
   for (a in 1:length(allrevs)){
-  myset <- df$PMID[df$Reviewer==myrevs[a]] #myrevs has orig names
+  myset <- df$PMID[df$Reviewer==allrevs[a]]
     for (s in 1:length(myset)){
     g <- grep(pmidlist[i],myset[s])
     if(length(g)>0)
@@ -133,36 +179,36 @@ pmidlist<-pmids$PMID
 
 
 
-```{r trygeomtile}
+```{r formatformelt}
 
 thistab<-mytab #for PMIDS
 #add the N times PMID was cited in brackets after PMID
-thistab$citecount<-0
-thistab$trycoerce<-0
+thistab$coerced<-0
+thistab$cited<-0
+
 for (i in 1:nrow(df)){
   for(j in 1:length(pmidlist)){
       g <- grep(pmidlist[j],df$cited[i])
-        if(length(g)>0)  {thistab$citecount[j]<-thistab$citecount[j]+1}   
+        if(length(g)>0)  {thistab$cited[j]<-thistab$cited[j]+1}   
       h <- grep(pmidlist[j],df$PMID[i])
-      if(length(h)>0)  {thistab$trycoerce[j]<-thistab$trycoerce[j]+1}
+      if(length(h)>0)  {thistab$coerced[j]<-thistab$coerced[j]+1}
   }
 }
-thistab$PMID<-paste0(thistab$PMID," (",thistab$citecount,")") #incorporate cite count in PMID
+thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite count in PMID
 
-plot(jitter(thistab$trycoerce),jitter(thistab$citecount))
+thistab<-thistab[order(thistab$PMID),]
+
+plot(jitter(thistab$coerced),jitter(thistab$cited))
 
 # nc<-ncol(thistab) #then delete citecount column
 # thistab<-thistab[,-nc]
-nrevs<-length(allrevs)
-mytab2<-as.matrix(thistab[,2:(nrevs+1)])
 
-#Nightmare getting the names aligned, given different names in the pmid and df files. 
-revorder<-c(3,7,5,9,4,6,8,2,10,1)
-revcount<-as.vector(table(df$Reviewer))[revorder]
-                    
-revlabels<-paste0(allrevs," \n(",revcount," reviews)")
+mytab2<-as.matrix(thistab[,2:(nrevs+1)])  #need matrix format for melt
 
 
+```
+
+```{r domelt}
 # Transform the matrix in long format
 dfm<- melt(mytab2)
 dfm$X1<-thistab[,1] #copies labels into 1st col
@@ -199,12 +245,29 @@ dfm$valuex<-paste0(dfm$value,dfm$marker)
 g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
   geom_tile(color = "white") + # Create heatmap
   geom_text(color = "black", size = 1)+ # Add text labels
-  scale_fill_gradient(low = "white", high = "cornflowerblue") + # Set color gradient
+  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
   theme_minimal() + # Set theme
   labs(x = "", y = "") + 
  scale_x_discrete(labels=revlabels)+ # Labels
   theme(legend.position = "none")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=6))+
   theme(axis.text.y = element_text(size=6))
+
+```
+
+```{r revheatmap}
+# Plot heatmap with values
+
+
+g <- ggplot(dfm, aes(y = Reviewer, x = x, fill = value, label = marker,color=color)) +
+  geom_tile(color = "white") + # Create heatmap
+  geom_text(color = "black", size = 3)+ # Add text labels
+  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + 
+ scale_y_discrete(labels=revlabels)+ # Labels
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size=4))+
+  theme(axis.text.x = element_text(size=4))
 
 ```
