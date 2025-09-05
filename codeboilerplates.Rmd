@@ -25,7 +25,11 @@ library("xlsx") #read and write xlsx files
 
 ```{r readmaindf}
 
-df <- read.xlsx('Data set 30 Aug.xlsx',sheetIndex=1)
+df <- read.xlsx('Data set 2 Sept.xlsx',sheetIndex=1)
+
+maxcoded = 154 #we need to exclude those that have not yet been coded
+w<-which(df$ID>maxcoded)
+df<-df[-w,]
 
 #we'll cut out unwanted columns
 wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI')
@@ -54,29 +58,54 @@ df$Reviewer<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A",
 #table(df$Reviewer)
 
 #Remove reviewers with just one review if removesolo =1
-removesolo<-0
+removesolo<-1
 if(removesolo==1){
-
-solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S')
-for (s in 1:length(solorevs)){
-  w<-which(df$Reviewer == solorevs[s])
-  df<-df[-w,]
-}
+  
+  solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S')
+  for (s in 1:length(solorevs)){
+    w<-which(df$Reviewer == solorevs[s])
+    if(length(w)>0){
+    df<-df[-w,]
+    }
+  }
 }
 
 myrevs<-unique(df$Reviewer)
 
 nrev<-length(myrevs)
+trev <- table(df$Reviewer)
+Nbyrev<-as.vector(trev) #This has the N reviews done by each reviewer, in same order as codetab
+
 
 ```
 
+All reviewers included here, n  = 15
 
 
 
 ```{r bigfileread}
-codesdf <- read.xlsx('allrevs_cleaned.xlsx',sheetIndex=1)
-allcodes<-unique(codesdf$code1)
-#pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have #preceding or final blank space
+codesdf <- read.xlsx('allrevs_cleaned_040925.xlsx',sheetIndex=1)
+boilercode<-read.xlsx('allrevs_cleaned_040925.xlsx',sheetIndex=2)
+#NB there are blanks in boilercode; select just rows with codes
+boileromit<-which(is.na(boilercode$orig.code)) 
+allboiler<-1:nrow(boilercode)
+boilerrows<-allboiler[-boileromit]
+codesdf$nucode<-NA
+oldcodes<-unique(boilercode$orig.code)
+newcodes<-unique(boilercode$new.code)
+for (i in boilerrows){
+  w<-which(codesdf$code1==boilercode$orig.code[i])
+  boilercode$N.occurrences[i]<- length(w)
+  codesdf$nucode[w]<-boilercode$new.code[i]
+}
+  
+write.xlsx(boilercode,'boilercode.xlsx')
+ 
+#remove blank rows from big file with all coded reports (codesdf)
+w<-which(is.na(codesdf$ID))
+codesdf<-codesdf[-w,]
+allcodes<-unique(codesdf$nucode)
+
 
 #Need to add column specifying reviewer for each ID
 codesdf$Reviewer<-NA
@@ -89,14 +118,18 @@ for(i in 1:nrow(df)){
 
 
 
-codetab<-as.data.frame.matrix(table(codesdf$Reviewer,codesdf$code1))
 
+codetab<-as.data.frame.matrix(table(codesdf$Reviewer,codesdf$nucode))
 
+codetab2<-codetab
+for (r in 1:nrow(codetab)){
+  codetab2[r,]<-codetab[r,]/Nbyrev[r] #N mentions of code per review
+}  
 ```
 
 
 ```{r domelt}
-mytab2<-as.matrix(codetab)  #need matrix format for melt
+mytab2<-as.matrix(codetab2)  #need matrix format for melt
 
 # Transform the matrix in long format
 dfm<- melt(mytab2)
@@ -110,8 +143,8 @@ colnames(dfm) <- c("Reviewer", "code","value")
 ```{r revheatmap}
 # Plot heatmap with values
 #censor the data at 5
-w<-which(dfm$value>4)
-dfm$value[w]<-5
+w<-c(which(dfm$code=='X1'),which(dfm$code=='X2'),which(dfm$code=='X3'))
+dfm<-dfm[-w,]
 #
 g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = value, color=value)) +
   geom_tile(color = "white") + # Create heatmap
@@ -121,7 +154,7 @@ g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = value, color=value)) +
   labs(x = "", y = "") + 
  # Labels
   theme(legend.position = "none")+
-  theme(axis.text.x = element_text(angle = 90, hjust = 1,size=6))+
-  theme(axis.text.x = element_text(size=6))
+   theme(axis.text.x = element_text(size=4))
+  
 
 ```

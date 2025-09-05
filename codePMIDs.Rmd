@@ -242,21 +242,21 @@ dfm$valuex<-paste0(dfm$value,dfm$marker)
 
 
 # Plot heatmap with values
-g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
-  geom_tile(color = "white") + # Create heatmap
-  geom_text(color = "black", size = 1)+ # Add text labels
-  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
-  theme_minimal() + # Set theme
-  labs(x = "", y = "") + 
- scale_x_discrete(labels=revlabels)+ # Labels
-  theme(legend.position = "none")+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=6))+
-  theme(axis.text.y = element_text(size=6))
+# g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
+#   geom_tile(color = "white") + # Create heatmap
+#   geom_text(color = "black", size = 1)+ # Add text labels
+#   scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
+#   theme_minimal() + # Set theme
+#   labs(x = "", y = "") + 
+#  scale_x_discrete(labels=revlabels)+ # Labels
+#   theme(legend.position = "none")+
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=6))+
+#   theme(axis.text.y = element_text(size=6))
 
 ```
 
 ```{r revheatmap}
-# Plot heatmap with values
+# Plot heatmap with values -originalwith reviewers on x axis
 
 
 g <- ggplot(dfm, aes(y = Reviewer, x = x, fill = value, label = marker,color=color)) +
