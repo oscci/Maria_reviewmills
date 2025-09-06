@@ -38,23 +38,6 @@ w<-which(is.na(df$Reviewer))
 df<-df[-w,]
 
 #Recode names in df file to be same as in PMID file; can also make rare cases 'other';
-#But for now may be best to keep them despite low N
-# df$Reviewer1<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A", 
-#                         "Ottavia D'Oria"  ~ "D'Oria O",
-#                          "Giorgio Bogani" ~ "Bogani G",
-#                         "Violante Di Donato" ~"Di Donato V",
-#                         "Antonio Simone Laganà" ~ "Laganà AS",
-#                         "Fabrizio Signore" ~ "X_other",
-#                         "Ilaria Cuccu" ~ "Cuccu I",
-#                          "Silvia Ganduscio" ~ "X_other",
-#                         "Tullio Golia D'Augè" ~ "D'Augè TG",
-#                         "Felice Sorrentino"~"X_other",
-#                         "Andrea Etrusco" ~ "Etrusco A",
-#                         "VERONICA LUMIA" ~"X_other",
-#                         "Gaetano Riemma" ~"X_other",
-#                         "Doriana Lucchese "~"X_other",
-#                        .default = "_Anon")
-
 
 df$Reviewer<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A",
                         "Ottavia D'Oria"  ~ "D'Oria O",
@@ -107,17 +90,25 @@ nrev<-length(myrevs)
 pmids <- read.csv('PMIDS_with_aus.csv')
 pmids<-pmids[,c(1,3)] #only need PMID and Authors
 #pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
+pmids$Authors <- sub(';',',',pmids$Authors)
 
+namechange<-read.csv('name convert.csv') #hand crafted! may need to add
+for (i in 1:nrow(namechange)){
+  pmids$Authors<- sub(namechange$convert.from[i],namechange$convert.to[i],pmids$Authors) 
 
+}
 ```
 
 
 Would be nice to have a list of all the authors of these articles.
 Means splitting col 2 of the pmids; these are comma separated.
+NB some have semicolon before an organisation
 
 ```{r getallaus}
 dfauth<-data.frame(matrix(NA,nrow=2000,ncol=2))
 names(dfauth)<-c('PMID','Author')
+
+pmids$Authors <- sub(';',',',pmids$Authors) #change semicolons to commas
 thisrow<-0
 for(i in 1:nrow(pmids)){
     s<-unlist(str_split_1(pmids$Authors[i],","))
@@ -236,24 +227,14 @@ dfm$marker[dfm$isauthor==1]<-'*'
 
 dfm$valuex<-paste0(dfm$value,dfm$marker)
 
-```
-
-```{r makemap}
-
-
-# Plot heatmap with values
-# g <- ggplot(dfm, aes(x = Reviewer, y = x, fill = value, label = valuex,color=color)) +
-#   geom_tile(color = "white") + # Create heatmap
-#   geom_text(color = "black", size = 1)+ # Add text labels
-#   scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
-#   theme_minimal() + # Set theme
-#   labs(x = "", y = "") + 
-#  scale_x_discrete(labels=revlabels)+ # Labels
-#   theme(legend.position = "none")+
-#   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=6))+
-#   theme(axis.text.y = element_text(size=6))
+#dfm$Reviewer is a factor.  We should be able to change levels to anonymise
+nl<-length(levels(dfm$Reviewer))
+levels(dfm$Reviewer) <- c(paste('Reviewer',1:(nl-1)),'Anon')
+revlabels<-paste0(levels(dfm$Reviewer)," \n(",revcount[1,]," reviews)")
 
 ```
+
+
 
 ```{r revheatmap}
 # Plot heatmap with values -originalwith reviewers on x axis
@@ -262,11 +243,11 @@ dfm$valuex<-paste0(dfm$value,dfm$marker)
 g <- ggplot(dfm, aes(y = Reviewer, x = x, fill = value, label = marker,color=color)) +
   geom_tile(color = "white") + # Create heatmap
   geom_text(color = "black", size = 3)+ # Add text labels
-  scale_fill_gradient(low = "white", high = "blue") + # Set color gradient
+  scale_fill_gradient(low = "beige", high = "blue") + # Set color gradient
   theme_minimal() + # Set theme
-  labs(x = "", y = "") + 
+  labs(x = "PMIDs", y = "") + 
  scale_y_discrete(labels=revlabels)+ # Labels
-  theme(legend.position = "none")+
+  #theme(legend.position = "none")+
   theme(axis.text.x = element_text(angle = 90, hjust = 1,size=4))+
   theme(axis.text.x = element_text(size=4))
 
