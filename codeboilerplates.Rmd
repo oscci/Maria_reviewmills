@@ -4,8 +4,7 @@ author: "Dorothy Bishop"
 date: "2025-08-09"
 output: html_document
 ---
-
-Reads the list of boilerplate codes 
+ 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -20,106 +19,138 @@ library("xlsx") #read and write xlsx files
 
 ```
 
+Main files that we need for this:
+indexdf is the original file from Maria that has one row per review, with biblio information about the article, wayback link to the reviews, and also lists the reviewer, original boilerplate codes, PMIDs and whether they were cited.
 
+We prune it so we just have the required columns
 
+Then we change the names of reviewers to match PMID format
 
-```{r readmaindf}
+There is option to remove reviewers who did just one review
 
-df <- read.xlsx('Data set 2 Sept.xlsx',sheetIndex=1)
+Finally we make a list of the reviewers and count how many reviews each did.
 
-maxcoded = 154 #we need to exclude those that have not yet been coded
-w<-which(df$ID>maxcoded)
-df<-df[-w,]
+```{r readindexdf}
+
+indexdf <- read.xlsx("Data set 10 Sep- Gaming the peer review system(1).xlsx",sheetIndex=1)
+
+#maxcoded = 154 #we need to exclude those that have not yet been coded
+#w<-which(indexdf$ID>maxcoded)
+#indexdf<-indexdf[-w,]
 
 #we'll cut out unwanted columns
-wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI')
-df<-df[,wantcols]
-names(df)<-c('ID','Reviewer','Publisher','DOI')
+wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
+              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs')
+indexdf<-indexdf[,wantcols]
+names(indexdf)<-c('ID','Reviewer','Publisher','DOI','Boilerplate','PMID','cited')
 #remove blank row
-w<-which(is.na(df$Reviewer))
-df<-df[-w,]
+w<-which(is.na(indexdf$Reviewer))
+indexdf<-indexdf[-w,]
 
 
-df$Reviewer<-case_match(df$Reviewer, "Andrea Giannini"  ~ "Giannini A",
+
+indexdf$Reviewer<-case_match(indexdf$Reviewer, "Andrea Giannini"  ~ "Giannini A",
                         "Ottavia D'Oria"  ~ "D'Oria O",
                          "Giorgio Bogani" ~ "Bogani G",
                         "Violante Di Donato" ~"Di Donato V",
                         "Antonio Simone Laganà" ~ "Laganà AS",
                         "Fabrizio Signore" ~ "Signore F",
                         "Ilaria Cuccu" ~ "Cuccu I",
-                         "Silvia Ganduscio" ~ "Ganduscio S",
+                        "Silvia Ganduscio" ~ "Ganduscio S",
                         "Tullio Golia D'Augè" ~ "D'Augè TG",
                         "Felice Sorrentino"~"Sorrentino F",
                         "Andrea Etrusco" ~ "Etrusco A",
                         "VERONICA LUMIA" ~"Lumia V",
                         "Gaetano Riemma" ~"Riemma G",
-                        "Doriana Lucchese "~"Lucchese D", #NB space after name
+                        "Doriana Lucchese "~"Lucchese D",  #NB space after name
+                        "Giuseppe Gullo" ~"Gullo G",
+                        "Salvatore Insinga" ~ "Insinga S",
+                        "Pietro Serra" ~ "Serra P",
+                        "Alessandra Lopez" ~ "Lopez A",
                        .default = "X_Anon")
-#table(df$Reviewer)
+#table(indexdf$Reviewer)
 
 #Remove reviewers with just one review if removesolo =1
 removesolo<-1
 if(removesolo==1){
   
-  solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S')
+  solorevs<-c('Sorrentino F','Signore F','Riemma G','Lumia V','Lucchese D','Ganduscio S','Insinga S','Serra P','Lopez A')
   for (s in 1:length(solorevs)){
-    w<-which(df$Reviewer == solorevs[s])
+    w<-which(indexdf$Reviewer == solorevs[s])
     if(length(w)>0){
-    df<-df[-w,]
+    indexdf<-indexdf[-w,]
     }
   }
 }
 
-myrevs<-unique(df$Reviewer)
+myrevs<-unique(indexdf$Reviewer)
 
 nrev<-length(myrevs)
-trev <- table(df$Reviewer)
+trev <- table(indexdf$Reviewer)
 Nbyrev<-as.vector(trev) #This has the N reviews done by each reviewer, in same order as codetab
 
 
 ```
 
-All reviewers included here, n  = 15
+Next file is the one with a line for each comment in each review, all stacked together for the target set.
+This is some version of allrevs, and is xlsx format.
+We read the first sheet as coded_df
+
+The second sheet has the boilerplate codes defined, and includes columns for the original letter codes and the new codes.
+The new codes for many sections have several numbered subtypes. 
+We can read those in to get counts for subtypes, but later we drop the number so we have coarse codes.
 
 
 
-```{r bigfileread}
-codesdf <- read.xlsx('allrevs_cleaned_040925.xlsx',sheetIndex=1)
-boilercode<-read.xlsx('allrevs_cleaned_040925.xlsx',sheetIndex=2)
+```{r recodebigfile_and_boiler}
+coded_df <- read.xlsx('allrevs_160925_DB_RA.xlsx',sheetIndex=1)
+boilercode<-read.xlsx('allrevs_160925_DB_RA.xlsx',sheetName="boiler10")
 #NB there are blanks in boilercode; select just rows with codes
 boileromit<-which(is.na(boilercode$orig.code)) 
 allboiler<-1:nrow(boilercode)
-boilerrows<-allboiler[-boileromit]
-codesdf$nucode<-NA
+if(length(boileromit>0)){
+boilerrows<-allboiler[-boileromit]}
+coded_df$nucode<-NA
 oldcodes<-unique(boilercode$orig.code)
-newcodes<-unique(boilercode$new.code)
+newcodes<-unique(boilercode$subtype)
 for (i in boilerrows){
-  w<-which(codesdf$code1==boilercode$orig.code[i])
-  boilercode$N.occurrences[i]<- length(w)
-  codesdf$nucode[w]<-boilercode$new.code[i]
+  w<-which(coded_df$final==boilercode$orig.code[i])
+  boilercode$N.occurrence[i]<- length(w)
+  coded_df$nucode[w]<-boilercode$subtype[i]
 }
   
-write.xlsx(boilercode,'boilercode.xlsx')
- 
-#remove blank rows from big file with all coded reports (codesdf)
-w<-which(is.na(codesdf$ID))
-codesdf<-codesdf[-w,]
-allcodes<-unique(codesdf$nucode)
+write.xlsx(boilercode,'boilerwithN.xlsx',row.names=F)
+
+#Same as original boilercode but has N occurences added. 
+
+#Checking changes made by RA to original: do cross tabulation
+# write.xlsx(boilercode,'boilercode.xlsx')
+# t<-table(coded_df$code1,coded_df$codeRA)
+# write.csv(t,'codetab.csv')
+
+#remove blank rows from big file with all coded reports (coded_df)
+w<-which(is.na(coded_df$ID))
+coded_df<-coded_df[-w,]
+allcodes<-unique(coded_df$nucode)
+```
 
 
+```{r addreviewerstocodeddf}
 #Need to add column specifying reviewer for each ID
-codesdf$Reviewer<-NA
-codesdf$numID<-as.integer(substring(codesdf$ID,2,4))
-for(i in 1:nrow(df)){
-  thisnum<-df$ID[i]
-  w<-which(codesdf$numID==thisnum)
-  codesdf$Reviewer[w]<-df$Reviewer[i]
+coded_df$Reviewer<-NA
+coded_df$numID<-as.integer(substring(coded_df$ID,2,4)) #ID for this review; we need to find each line with this number and add the reviewer
+for(i in 1:nrow(indexdf)){
+  thisnum<-indexdf$ID[i]
+  w<-which(coded_df$numID==thisnum) #lines that below to this review
+  coded_df$Reviewer[w]<-indexdf$Reviewer[i]
 }
 
+coded_df$coarsecode<-substr(coded_df$nucode,1,1) #just the initial letter for coarsecode
 
 
+codetab<-as.data.frame.matrix(table(coded_df$Reviewer,coded_df$coarsecode))
 
-codetab<-as.data.frame.matrix(table(codesdf$Reviewer,codesdf$nucode))
+
 
 codetab2<-codetab
 for (r in 1:nrow(codetab)){
@@ -133,8 +164,13 @@ mytab2<-as.matrix(codetab2)  #need matrix format for melt
 
 # Transform the matrix in long format
 dfm<- melt(mytab2)
+revnames<-levels(dfm$X1)
 
-colnames(dfm) <- c("Reviewer", "code","value")
+colnames(dfm)[1:3] <- c("Reviewer", "code","N_per_review")
+#dfm$Reviewer is a factor.  We should be able to change levels to anonymise
+nl<-length(levels(dfm$Reviewer))
+levels(dfm$Reviewer) <- c(paste('Reviewer',1:(nl-1)),'Anon')
+revlabels<-paste0(levels(dfm$Reviewer)," \n(",Nbyrev," reviews)")
 
 
 ```
@@ -142,19 +178,189 @@ colnames(dfm) <- c("Reviewer", "code","value")
 
 ```{r revheatmap}
 # Plot heatmap with values
-#censor the data at 5
-w<-c(which(dfm$code=='X1'),which(dfm$code=='X2'),which(dfm$code=='X3'))
-dfm<-dfm[-w,]
+# remove categories for unique codes
+# w<-c(which(dfm$code=='X1'),which(dfm$code=='X2'),which(dfm$code=='X3'))
+# if(length(w)>0){
+# dfm<-dfm[-w,]}
 #
-g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = value, color=value)) +
+g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = N_per_review, color=value)) +
   geom_tile(color = "white") + # Create heatmap
   #geom_text(color = "black", size = 3)+ # Add text labels
-  scale_fill_gradient(low = "white", high = "darkblue") + # Set color gradient
+  scale_fill_gradient(low = "beige", high = "darkblue") + # Set color gradient
   theme_minimal() + # Set theme
   labs(x = "", y = "") + 
  # Labels
-  theme(legend.position = "none")+
-   theme(axis.text.x = element_text(size=4))
+   theme(axis.text.x = element_text(angle = 90, hjust = 1,size=6))+
+  theme_bw()
   
+ggsave("heatmap_boilercodes.tif", dpi=300, width = 7, height = 3)
+
+```
+
+Analysis of PMIDs now appended here
+
+```{r pmidread}
+
+
+pmids <- read.xlsx('pmids/PMID_au_list_Sep21.xlsx',sheetIndex=1)
+
+#pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
+#pmids$Authors <- sub(';',',',pmids$Authors)
+
+namechange<-read.csv('name convert.csv') #hand crafted! may need to add
+for (i in 1:nrow(namechange)){
+  pmids$Authors<- sub(namechange$convert.from[i],namechange$convert.to[i],pmids$Authors) 
+
+}
+```
+Get a list of all the authors of these articles.
+Means splitting col 2 of the pmids; these are comma separated.
+NB some have semicolon before an organisation
+
+```{r getallaus}
+dfauth<-data.frame(matrix(NA,nrow=2000,ncol=2))
+names(dfauth)<-c('PMID','Author')
+
+pmids$Authors <- sub(';',',',pmids$Authors) #change semicolons to commas
+thisrow<-0
+for(i in 1:nrow(pmids)){
+    s<-unlist(str_split_1(pmids$Authors[i],","))
+    for (r in 1:length(s)){
+      dfauth$PMID[(thisrow+r)]<-pmids$PMID[i]
+      dfauth$Author[(thisrow+r)]<-trimws(s[r],whitespace="[ .]") #remove stop as well as space
+    }
+    thisrow<-thisrow+length(s)
+    
+}
+w<-which(dfauth$PMID>0)
+if(length(w)>0){
+dfauth<-dfauth[w,]#remove blanks
+}
+#double check for dodgy names
+for (i in 1:nrow(namechange)){
+  dfauth$Author<- sub(namechange$convert.from[i],namechange$convert.to[i],dfauth$Author) 
+
+}
+autab<-table(dfauth$Author)
+autab<-autab[order(autab,decreasing=T)]
+
+autab[1:20]
+mauthor<-data.frame(autab)
+write.xlsx(dfauth,"Individual_authors_PMID.xlsx") #scrutinise this in case any more duplicate names
+write.xlsx(mauthor,"Individual_author_counts.xlsx")
+
+```
+
+
+
+```{r pmidtable}
+
+mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(myrevs))))
+
+#Remarkably convoluted to get the N reviews for each reviewer in the right order! 
+#This seems to work without needing hard coding.
+revcounts<-as.data.frame.matrix(t(table(indexdf$Reviewer)))
+allrevs<-names(revcounts) #revs in the order we can use for creating name with count
+nrevs<-length(allrevs)    
+names(mytab)<-c('PMID',allrevs)
+mytab$PMID<-pmids$PMID
+revlabels<-paste0(allrevs," \n(",revcount[1,]," reviews)")
+
+
+ for (i in 1:length(pmidlist)){
+  for (a in 1:length(allrevs)){
+  myset <- indexdf$PMID[indexdf$Reviewer==allrevs[a]]
+    for (s in 1:length(myset)){
+    g <- grep(pmidlist[i],myset[s])
+    if(length(g)>0)
+      {mytab[i,(a+1)]<-mytab[i,(a+1)]+1}
+    }
+  }
+ }
+
+
+```
+
+
+```{r formatformelt}
+
+thistab<-mytab #for PMIDS
+#add the N times PMID was cited in brackets after PMID
+thistab$coerced<-0
+thistab$cited<-0
+
+for (i in 1:nrow(indexdf)){
+  for(j in 1:length(pmidlist)){
+      g <- grep(pmidlist[j],indexdf$cited[i])
+        if(length(g)>0)  {thistab$cited[j]<-thistab$cited[j]+1}   
+      h <- grep(pmidlist[j],indexdf$PMID[i])
+      if(length(h)>0)  {thistab$coerced[j]<-thistab$coerced[j]+1}
+  }
+}
+thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite count in PMID
+
+thistab<-thistab[order(thistab$PMID),]
+
+plot(jitter(thistab$coerced),jitter(thistab$cited))
+
+# nc<-ncol(thistab) #then delete citecount column
+# thistab<-thistab[,-nc]
+
+mytab2<-as.matrix(thistab[,2:(nrevs+1)])  #need matrix format for melt
+
+
+```
+
+```{r domelt}
+# Transform the matrix in long format
+dfm<- melt(mytab2)
+dfm$X1<-thistab[,1] #copies labels into 1st col
+
+
+colnames(dfm) <- c("x", "Reviewer","value")
+dfm$isauthor<-0 #add new column
+#we'll now add a column that indicates if Reviewer was an author on that PMID
+for (i in 1:nrow(dfm)){
+  thisrev<-dfm$Reviewer[i] #this has the short reviewer names from PMID
+  thisp <- dfm$x[i]
+  plen<-length(thisp)
+  s<-unlist(str_split_1(thisp," "))[[1]] #remove stuff after blank to get PMID
+  w<-which(dfauth$PMID == s)
+  theseauths<-dfauth$Author[w]
+  ww<-which(theseauths==thisrev)
+  if(length(ww)>0){
+  dfm$isauthor[i]<-1
+  }
+
+}
+  #change isauthor to a colour
+dfm$marker<-''
+dfm$marker[dfm$isauthor==1]<-'*'
+
+dfm$valuex<-paste0(dfm$value,dfm$marker)
+
+#dfm$Reviewer is a factor.  We should be able to change levels to anonymise
+nl<-length(levels(dfm$Reviewer))
+levels(dfm$Reviewer) <- c(paste('Reviewer',1:(nl-1)),'Anon')
+revlabels<-paste0(levels(dfm$Reviewer)," \n(",revcount[1,]," reviews)")
+names(dfm)[3]<-'Count'
+```
+
+
+
+```{r revheatmap}
+# Plot heatmap with values -originalwith reviewers on x axis
+
+
+gp <- ggplot(dfm, aes(y = Reviewer, x = x, fill = Count, label = marker,color=color)) +
+  geom_tile(color = "white") + # Create heatmap
+  geom_text(color = "black", size = 3)+ # Add text labels
+  scale_fill_gradient(low = "beige", high = "blue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "PMIDs", y = "") + 
+ scale_y_discrete(labels=revlabels)+ # Labels
+  #theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size=4))+
+  theme(axis.text.x = element_text(size=4))
 
 ```
