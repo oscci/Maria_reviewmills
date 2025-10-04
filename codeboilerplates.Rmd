@@ -32,22 +32,22 @@ Finally we make a list of the reviewers and count how many reviews each did.
 
 ```{r readindexdf}
 
-indexdf <- read.xlsx("Data set 28 Sep- Gaming the peer review system.xlsx",sheetIndex=1)
+indexdf <- read.xlsx("Data set 3 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
 
 
 #we'll cut out unwanted columns
 wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.JOURNAL','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
-              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs','coerced..9.for.resisted.','comparison.rev','Nrev.in.target.set')
+              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs','coerced..9.for.resisted.','comparison.rev','Nrev.in.target.set','revmilled')
 indexdf<-indexdf[,wantcols]
-names(indexdf)<-c('ID','Reviewer','Journal','Publisher','DOI','Boilerplate','PMID','cited', 'coerced','comparison.rev','NrevThisArticle')
+names(indexdf)<-c('ID','Reviewer','Journal','Publisher','DOI','Boilerplate','PMID','cited', 'coerced','comparison.rev','NrevThisArticle','revmill.ed')
 #remove blank row
-w<-which(is.na(indexdf$Reviewer))
+w<-which(is.na(indexdf$Reviewer)) #remove blank and duplicate cases, all marked n/a
 if(length(w)>0){
 indexdf<-indexdf[-w,]}
 
-w<-which(is.numeric(indexdf$ID))
-if(length(w)>0){
-indexdf<-indexdf[-w,]}
+# w<-which(is.numeric(indexdf$ID))
+# if(length(w)>0){
+# indexdf<-indexdf[-w,]}
 
 
 indexdf$Reviewer<-case_match(indexdf$Reviewer, "Andrea Giannini"  ~ "Giannini A",
@@ -97,9 +97,9 @@ write.csv(pubjtab,'pubjtab.csv')
 #Remove reviewers with just one review if removesolo =1
 removesolo<-1
 if(removesolo==1){
-  solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Insigna S','Ganduscio S','Lumia V', 'Insinga S')
+  solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Insigna S','Ganduscio S','Lumia V','Insinga S') #first mention of Insinga does't seem to pick him up! 
   
-  #solorevs<-c('Alessandra Lopez','Doriana Lucchese', 'Fabrizio Signore', 'Felice Sorrentino','Gaetano Riemma','Pietro Serra','Salvatore Insinga','Silvia Ganduscio','Veronica Lumia')
+
  
   for (s in 1:length(solorevs)){
     w<-which(indexdf$Reviewer == solorevs[s])
@@ -137,8 +137,8 @@ We can read those in to get counts for subtypes, but later we drop the number so
 
 
 ```{r recodebigfile_and_boiler}
-coded_df <- read.xlsx('allrevs_280925.xlsx',sheetName="Reviews")
-boilercode<-read.xlsx('allrevs_280925.xlsx',sheetName="boiler10")
+coded_df <- read.xlsx('allrevs_031025.xlsx',sheetName="Reviews")
+boilercode<-read.xlsx('allrevs_031025.xlsx',sheetName="boiler10")
 NRcases<-nrow(coded_df) #we'll be appending to this so need to keep N for just R coded
 #We'll append the control revs to coded_df
 
@@ -147,22 +147,22 @@ con_df<-read.xlsx("Comparison data/all_control_revs_coded_28Sep2025.xlsx",sheetN
 
 #to append con data need to match column names. Easiest is to make a duplicate df and paste in the cols we have
 
-temp<-coded_df[1:nrow(con_df),] #dummy to hold data
-for (i in 1:ncol(coded_df)){
-  w<-which(names(con_df)==names(coded_df)[i])
-  if(length(w)>0){
-  temp[,w]<-con_df[,w]
+temp<-coded_df[1:nrow(con_df),]
+temp[,3:ncol(temp)]<-NA  #dummy to hold data
+temp[,1:2]<-con_df[,1:2]
+wantcols<-c('N','final','text')
+w<-which(names(con_df) %in% wantcols)
+ww<-which(names(coded_df) %in% wantcols)
+for (i in 1:length(w)){ #need to just read in relevant columns
+  temp[,ww]<-con_df[,w]
   }
-  if(length(w)==0){
-  temp[,i]<-NA
-  }
-}
+
   
 #bolt on cons after creating a col with group
 coded_df$group<-'R'
 temp$group<-'C'
 coded_df<-rbind(coded_df,temp)
-
+###############
 
 boileromit<-which(is.na(boilercode$orig.code)) 
 allboiler<-1:nrow(boilercode)
@@ -172,8 +172,9 @@ coded_df$nucode<-NA
 oldcodes<-unique(boilercode$orig.code)
 newcodes<-unique(boilercode$subtype)
 for (i in boilerrows){
-  coded_df$nucode[w]<-boilercode$subtype[i]
   w<-which(coded_df$final[1:NRcases]==boilercode$orig.code[i])
+  coded_df$nucode[w]<-boilercode$subtype[i]
+
   #NOTE : we are counting only for the R reviews!
   boilercode$N.occurrence[i]<- length(w)
 
@@ -194,6 +195,8 @@ w<-which(is.na(coded_df$ID))
 coded_df<-coded_df[-w,]
 allcodes<-unique(coded_df$nucode)
 
+#check coding 
+checktab<-as.data.frame.matrix(table(coded_df$final,coded_df$nucode))
 ```
 
 
@@ -373,6 +376,7 @@ thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite coun
 thistab<-thistab[order(thistab$PMID),]
 
 plot(jitter(thistab$coerced),jitter(thistab$cited))
+#This is not for the paper, but is useful sanity check on results - should be close correlation
 
 # nc<-ncol(thistab) #then delete citecount column
 # thistab<-thistab[,-nc]
@@ -454,15 +458,93 @@ pubptab<-prop.table(pubtab)
 pubptab
 
 #Proportion of articles with successful coercions
-coercedtab<-table(fulldf$coerced)
+dfmp$coerced<-thistab$coerced
+dfmp$benefit<-dfmp$isauthor*dfmp$coerced
+bentab<-as.data.frame.matrix(table(dfmp$Reviewer,dfmp$benefit))
+bentab$tot<-rowSums(bentab[,2:13])
+
+```
+
+We need a comparison of length of reviews for target and comparisons, and also mean N non-boilerplate per review.
+
+The full set of reviews for both is in coded_df; group shows whether C or R
+
+```{r compareCR}
+myt<-table(coded_df$ID)
+myNstatement<-as.data.frame(myt)
+names(myNstatement)<-c('ID','Nstatements')
+myNstatement$ID<-as.character(myNstatement$ID) #need to unfactor!
+mynonB<-coded_df[coded_df$final=="£",]
+myt2<-as.data.frame(table(mynonB$ID))
+myt2$Var1<-as.character(myt2$Var1) #need to unfactor!
+myNstatement$nonB<-0
+for(i in 1:nrow(myNstatement)){
+  w<-which(myt2$Var1==myNstatement$ID[i])
+  if(length(w)>0){
+    myNstatement$nonB[i]<-myt2$Freq[w]
+  }
+}
+myNstatement$group<-substr(myNstatement$ID,1,1)
+
+
+summarytab<-myNstatement %>%
+       group_by(group) %>%
+       summarise_at(vars(starts_with("N")), list(mean=mean, sd=sd,min=min,max=max,N=length))
+
 
 ```
 
 
+Estimate how many additional citations the authors obtained
 
-
+```{r coerced}
+dfmp$Count
+dfmp$benefit<-dfmp$isauthor*dfmp$Count.old
+table(dfmp$Reviewer,dfmp$benefit)
+```
                
+Supplement 2 will have subset of columns of coded_df
+```{r createSupp2}
+supp2<-coded_df[,c(9,1,2,3,8,10,13,11)]
+supp2$reviewer<-NA
+for (i in 1:(length(revnames)-1)){
+  w<-which(supp2$Reviewer==revnames[i])
+  supp2$reviewer[w]<-paste0('Reviewer ',i)
+}
+w<-which(supp2$Reviewer=="X_Anon")
+supp2$reviewer[w]<-'Anon'
 
+#for completeness also write the solorevs
+solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Ganduscio S','Lumia V','Insinga S') #first mention of Insinga does't seem to pick him up! 
+
+origsolorevs<-c('Alessandra Lopez','Doriana Lucchese', 'Fabrizio Signore', 'Felice Sorrentino','Gaetano Riemma','Pietro Serra','Silvia Ganduscio','Veronica Lumia','Salvatore Insinga')
+fulldf<-fulldf[order(fulldf$ID),] #make sure all in order
+for (i in 1:length(solorevs)){
+  x<-which(fulldf$Reviewer==solorevs[i])
+  w<-fulldf$ID[x]
+  if(length(w)>0){
+  if(nchar(w)<3){w<-paste0("0",w)}
+  if(nchar(w)<3){w<-paste0("0",w)}
+ 
+  code<-paste0("R",w)
+  y<-which(supp2$ID==code)
+  supp2$Reviewer[y]<-solorevs[i]
+  supp2$reviewer[y]<-paste("Reviewer",(i+9)) #numbering for solos starts after 9
+  }
+}
+
+write.xlsx(supp2,"Supplement2.xlsx")
+```
+
+```{r supp3_4}
+supp3<-codetab2
+row.names(supp3)<-revlabels
+write.xlsx(supp3,'Supplement 3.xlsx')
+
+supp4<-thistab
+write.xlsx(supp4,'Supplement 4.xlsx')
+
+```
 
 
 
