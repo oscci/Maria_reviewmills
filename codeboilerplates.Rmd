@@ -11,9 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 require(tidyverse)
 require(here)
 require(TSDT) #for unfactor function ?may not be used
-
 require(stringr)
-require(ggpubr) #organise plots - not currently used
 library(reshape) #for melt function for geom
 library("xlsx") #read and write xlsx files
 
@@ -32,7 +30,8 @@ Finally we make a list of the reviewers and count how many reviews each did.
 
 ```{r readindexdf}
 
-indexdf <- read.xlsx("Data set 3 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
+indexdf <- read.xlsx("Data set 5 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
+#Between 3 and 5 Oct changed C066; it was a review with only 2 sentences, so new one selected
 
 
 #we'll cut out unwanted columns
@@ -97,10 +96,8 @@ write.csv(pubjtab,'pubjtab.csv')
 #Remove reviewers with just one review if removesolo =1
 removesolo<-1
 if(removesolo==1){
-  solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Insigna S','Ganduscio S','Lumia V','Insinga S') #first mention of Insinga does't seem to pick him up! 
-  
+  solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Ganduscio S','Lumia V','Insinga S') 
 
- 
   for (s in 1:length(solorevs)){
     w<-which(indexdf$Reviewer == solorevs[s])
     if(length(w)>0){
@@ -137,12 +134,12 @@ We can read those in to get counts for subtypes, but later we drop the number so
 
 
 ```{r recodebigfile_and_boiler}
-coded_df <- read.xlsx('allrevs_031025.xlsx',sheetName="Reviews")
-boilercode<-read.xlsx('allrevs_031025.xlsx',sheetName="boiler10")
+coded_df <- read.xlsx('allrevs_051025.xlsx',sheetName="Reviews")
+boilercode<-read.xlsx('allrevs_051025.xlsx',sheetName="boiler10")
 NRcases<-nrow(coded_df) #we'll be appending to this so need to keep N for just R coded
 #We'll append the control revs to coded_df
 
-con_df<-read.xlsx("Comparison data/all_control_revs_coded_28Sep2025.xlsx",sheetName="Reviews")
+con_df<-read.xlsx("Comparison data/all_control_revs_coded_05Oct2025.xlsx",sheetName="Reviews")
 #NB there are blanks in boilercode; select just rows with codes
 
 #to append con data need to match column names. Easiest is to make a duplicate df and paste in the cols we have
@@ -172,9 +169,9 @@ coded_df$nucode<-NA
 oldcodes<-unique(boilercode$orig.code)
 newcodes<-unique(boilercode$subtype)
 for (i in boilerrows){
-  w<-which(coded_df$final[1:NRcases]==boilercode$orig.code[i])
+  w<-which(coded_df$final==boilercode$orig.code[i])
   coded_df$nucode[w]<-boilercode$subtype[i]
-
+  w<-which(coded_df$final[1:NRcases]==boilercode$orig.code[i])
   #NOTE : we are counting only for the R reviews!
   boilercode$N.occurrence[i]<- length(w)
 
@@ -263,6 +260,7 @@ g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = N_per_review, color=value)) 
   scale_fill_gradient(low = "beige", high = "darkblue") + # Set color gradient
   theme_minimal() + # Set theme
   labs(x = "", y = "") + 
+  labs(fill="N per review")+
  # Labels
    theme(axis.text.x = element_text(angle = 90, hjust = 1,size=6))+
   theme_bw()
@@ -276,7 +274,8 @@ Analysis of PMIDs now appended here
 ```{r pmidread}
 
 
-pmids <- read.xlsx('pmids/PMID_au_list_Sep27.xlsx',sheetIndex=1)
+pmids <- read.xlsx('pmids/PMIDsfull_4_Oct.xlsx',sheetIndex=1)
+pmids <-pmids[pmids$includes.revmiller==1,]
 
 #pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
 #pmids$Authors <- sub(';',',',pmids$Authors)
@@ -371,7 +370,7 @@ for (i in 1:nrow(indexdf)){
       if(length(h)>0)  {thistab$coerced[j]<-thistab$coerced[j]+1}
   }
 }
-thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite count in PMID
+#thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite count in PMID - not visible in plot so exclude
 
 thistab<-thistab[order(thistab$PMID),]
 
@@ -486,26 +485,18 @@ for(i in 1:nrow(myNstatement)){
 }
 myNstatement$group<-substr(myNstatement$ID,1,1)
 
-
+#Summary tab has simple stats to report in paper
 summarytab<-myNstatement %>%
        group_by(group) %>%
        summarise_at(vars(starts_with("N")), list(mean=mean, sd=sd,min=min,max=max,N=length))
-
-
 ```
 
 
-Estimate how many additional citations the authors obtained
-
-```{r coerced}
-dfmp$Count
-dfmp$benefit<-dfmp$isauthor*dfmp$Count.old
-table(dfmp$Reviewer,dfmp$benefit)
-```
                
 Supplement 2 will have subset of columns of coded_df
+
 ```{r createSupp2}
-supp2<-coded_df[,c(9,1,2,3,8,10,13,11)]
+supp2<-coded_df[,c(1,9,2,3,8,10,13,11)]
 supp2$reviewer<-NA
 for (i in 1:(length(revnames)-1)){
   w<-which(supp2$Reviewer==revnames[i])
@@ -533,7 +524,7 @@ for (i in 1:length(solorevs)){
   }
 }
 
-write.xlsx(supp2,"Supplement2.xlsx")
+write.xlsx(supp2,"Supplement 2.xlsx")
 ```
 
 ```{r supp3_4}
@@ -541,10 +532,54 @@ supp3<-codetab2
 row.names(supp3)<-revlabels
 write.xlsx(supp3,'Supplement 3.xlsx')
 
-supp4<-thistab
+supp4<-thistab[order(thistab$PMID),]
+addbit<-pmids[order(pmids$PMID),]
+supp4<-cbind(supp4,addbit)
 write.xlsx(supp4,'Supplement 4.xlsx')
 
+
+
 ```
+NB Supplement 1 is a tidied up version of "Data set 3 Oct- Gaming the peer review system.xlsx"
+
+```{r numbercheckforpaper}
+#How many with comparison?
+mycomptab<-as.data.frame.matrix(table(fulldf$comparison.rev,fulldf$Reviewer))
+mycomptab<-mycomptab[,1:(ncol(mycomptab)-1)] #last col is Anon -remove
+x<-which(row.names(mycomptab)=="n/a")
+N0<-sum(mycomptab[x,])
+N1<-sum(mycomptab[-x,])
+write.xlsx(mycomptab,'rev by comp table.xlsx')
 
 
+text1<-paste0("For ",N1, " of ",( N0+N1)," nonanonymous articles in this target set, we identified a second review that was coded in the same way to act as a comparison set.")
+text1
+
+N3 <- nrow(fulldf)
+N4 <- length(unique(fulldf$DOI))
+N5 <- N3-length(grep("none",fulldf$PMID))
+N6 <- sum(table(fulldf$coerced)[2:7])
+
+text2 <-paste0("We identified a target set of ", N3, " review reports from ", N4, " articles that shared verbatim or highly similar boilerplate text. ", N5, " reports suggested citing at least one article which was co-authored by the reviewer or another member of the mill. Authors of ", N6, " articles complied with some or all suggestions for citation.")
+
+#N7 is citation requests that identify author. These are those coded C (for citation) - the number after C indicates how many requests of that type.
+#This would be a real pain to coded, so done by looking at table(coded_df$citationtype)
+
+N7 = 9+5+10+1
+w<-which(coded_df$citationtype %in% c('P1C1','P1D1','P2','T2'))
+N8 <- length(w)
+
+N9 <- nrow(pmids) #those not by review miller excluded after reading PMIDS
+
+text3 <-paste0("All but ",(N3-N5), " of the ", N3,  " boilerplate reviews suggested at least one article for citation co-authored by the reviewer or another member of the review mill. In most reviews, the request for citation did not identify the authors of the recommended articles, but rather referred to them by PubMed ID number (PMID), Digital Object Identifier (DOI), or title; only ",N7," review reports gave any information about authors when suggesting a citation. The median number of requested citations was two (",N8," reviews), with a range from 1 to 12." )
+
+text4<-paste0("There were ", N9," individual articles suggested as coercive citations, with many articles suggested several times, including by different reviewer")
+
+tx<-as.data.frame.matrix(table(coded_df$nucode,coded_df$group))
+tots<-colSums(tx)
+Ztots<-tx[nrow(tx),]
+nonZtots<-tots-Ztots
+
+text5<-paste0("There were only ",nonZtots[1]," cases of boilerplate in ",tots[1]," coded comments in the comparison reviews, compared with ",nonZtots[2]," boilerplate coded comments out of ",tots[2]," coded comments in the target set reviews.")
+```
 
