@@ -30,15 +30,15 @@ Finally we make a list of the reviewers and count how many reviews each did.
 
 ```{r readindexdf}
 
-indexdf <- read.xlsx("Data set 5 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
+indexdf <- read.xlsx("Data set 7 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
 #Between 3 and 5 Oct changed C066; it was a review with only 2 sentences, so new one selected
 
 
 #we'll cut out unwanted columns
-wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.JOURNAL','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI',
-              'Stock.phrases.included','PMIDs.mentioned','PMID.in.final.version.refs','coerced..9.for.resisted.','comparison.rev','Nrev.in.target.set','revmilled')
+wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.JOURNAL','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI','Publication.date..dd.mm.yyyy.',
+             'PMIDs.mentioned','PMID.in.final.version.refs','coerced..9.for.resisted.','comparison.rev','Nrev.in.target.set','revmilled')
 indexdf<-indexdf[,wantcols]
-names(indexdf)<-c('ID','Reviewer','Journal','Publisher','DOI','Boilerplate','PMID','cited', 'coerced','comparison.rev','NrevThisArticle','revmill.ed')
+names(indexdf)<-c('ID','Reviewer','Journal','Publisher','DOI','Date','PMID','cited', 'coerced','comparison.rev','NrevThisArticle','revmill.ed')
 #remove blank row
 w<-which(is.na(indexdf$Reviewer)) #remove blank and duplicate cases, all marked n/a
 if(length(w)>0){
@@ -115,7 +115,7 @@ Nbyrev<-as.vector(trev) #This has the N reviews done by each reviewer, in same o
 tcon<-as.data.frame.matrix(table(indexdf$comparison.rev,indexdf$Reviewer))
 write.xlsx(tcon,'Nconrevs.xlsx')
 w<-which(row.names(tcon)=='n/a') #find row for those without comparison
-#remove anons which are in last col
+#remove anons reviewer from target set which are in last col
 noncon<-tcon[w,1:(ncol(tcon)-1)]
 allrev<-Nbyrev[1:(length(Nbyrev)-1)]
 propcon<-(allrev-noncon)/allrev
@@ -127,6 +127,8 @@ Next file is the one with a line for each comment in each review, all stacked to
 This is some version of allrevs, and is xlsx format.
 We read the first sheet as coded_df
 
+NB. 7 October; we now read long file with R and C cases stacked.
+
 The second sheet has the boilerplate codes defined, and includes columns for the original letter codes and the new codes.
 The new codes for many sections have several numbered subtypes. 
 We can read those in to get counts for subtypes, but later we drop the number so we have coarse codes.
@@ -134,33 +136,18 @@ We can read those in to get counts for subtypes, but later we drop the number so
 
 
 ```{r recodebigfile_and_boiler}
-coded_df <- read.xlsx('allrevs_051025.xlsx',sheetName="Reviews")
-boilercode<-read.xlsx('allrevs_051025.xlsx',sheetName="boiler10")
-NRcases<-nrow(coded_df) #we'll be appending to this so need to keep N for just R coded
-#We'll append the control revs to coded_df
+coded_df <- read.xlsx('allrevsRC_071025.xlsx',sheetName="Reviews")
+boilercode<-read.xlsx('allrevsRC_071025.xlsx',sheetName="boiler10")
 
-con_df<-read.xlsx("Comparison data/all_control_revs_coded_05Oct2025.xlsx",sheetName="Reviews")
-#NB there are blanks in boilercode; select just rows with codes
+#remove blank rows from big file with all coded reports (coded_df)
 
-#to append con data need to match column names. Easiest is to make a duplicate df and paste in the cols we have
-
-temp<-coded_df[1:nrow(con_df),]
-temp[,3:ncol(temp)]<-NA  #dummy to hold data
-temp[,1:2]<-con_df[,1:2]
-wantcols<-c('N','final','text')
-w<-which(names(con_df) %in% wantcols)
-ww<-which(names(coded_df) %in% wantcols)
-for (i in 1:length(w)){ #need to just read in relevant columns
-  temp[,ww]<-con_df[,w]
-  }
-
-  
-#bolt on cons after creating a col with group
-coded_df$group<-'R'
-temp$group<-'C'
-coded_df<-rbind(coded_df,temp)
+w<-which(is.na(coded_df$final))
+coded_df<-coded_df[-w,]
+NRcases<-length(which(coded_df$group=='R'))
+coded_df<-coded_df[-(NRcases+1),] #remove header row from controls
 ###############
 
+#NB there are blanks in boilercode; select just rows with codes
 boileromit<-which(is.na(boilercode$orig.code)) 
 allboiler<-1:nrow(boilercode)
 if(length(boileromit>0)){
@@ -186,11 +173,6 @@ write.xlsx(boilercode,'boilerwithN.xlsx',row.names=F)
 # t<-table(coded_df$code1,coded_df$codeRA)
 # write.csv(t,'codetab.csv')
 
-
-#remove blank rows from big file with all coded reports (coded_df)
-w<-which(is.na(coded_df$ID))
-coded_df<-coded_df[-w,]
-allcodes<-unique(coded_df$nucode)
 
 #check coding 
 checktab<-as.data.frame.matrix(table(coded_df$final,coded_df$nucode))
@@ -274,8 +256,7 @@ Analysis of PMIDs now appended here
 ```{r pmidread}
 
 
-pmids <- read.xlsx('pmids/PMIDsfull_4_Oct.xlsx',sheetIndex=1)
-pmids <-pmids[pmids$includes.revmiller==1,]
+pmids <- read.xlsx('pmids/PMIDsfull_7_Oct.xlsx',sheetIndex=1)
 
 #pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
 #pmids$Authors <- sub(';',',',pmids$Authors)
@@ -496,14 +477,18 @@ summarytab<-myNstatement %>%
 Supplement 2 will have subset of columns of coded_df
 
 ```{r createSupp2}
-supp2<-coded_df[,c(1,9,2,3,8,10,13,11)]
-supp2$reviewer<-NA
+
+wantcols<-c('row','group','ID','N','text','nucode','coarsecode','cites.to.other.authors_any.format','citationtype','Reviewer')
+
+supp2<-coded_df[,wantcols]
+names(supp2)[c(6,8,9)]<-c('finecode','cites_others','cites_revmill')
+supp2$reviewerN<-NA
 for (i in 1:(length(revnames)-1)){
   w<-which(supp2$Reviewer==revnames[i])
-  supp2$reviewer[w]<-paste0('Reviewer ',i)
+  supp2$reviewerN[w]<-paste0('Reviewer ',i)
 }
 w<-which(supp2$Reviewer=="X_Anon")
-supp2$reviewer[w]<-'Anon'
+supp2$reviewerN[w]<-'Anon'
 
 #for completeness also write the solorevs
 solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Ganduscio S','Lumia V','Insinga S') #first mention of Insinga does't seem to pick him up! 
@@ -583,3 +568,21 @@ nonZtots<-tots-Ztots
 text5<-paste0("There were only ",nonZtots[1]," cases of boilerplate in ",tots[1]," coded comments in the comparison reviews, compared with ",nonZtots[2]," boilerplate coded comments out of ",tots[2]," coded comments in the target set reviews.")
 ```
 
+```{r citationplot}
+whichplot<-'Publications'
+whichplot<-"Citations"
+cites<-read.xlsx("citation_counts_Dims/citations_publications_Dims.xlsx",sheetName=whichplot)
+names(cites)[1]<-'Year'
+cites<-cites[1:(nrow(cites)-1),] #remove 2025
+cites<-cites[-(1:2),]
+
+citelong<- melt(cites,id.vars='Year',variable.name='Reviewer',value.name='number')
+names(citelong)[2:3]<-c("Reviewer","N")
+
+gc<-ggplot(data=citelong, aes(x=Year, y=N, group=Reviewer)) +
+  geom_line(aes(color=Reviewer))+
+  geom_point(aes(color=Reviewer))+
+  ggtitle(whichplot)
+#scale_color_brewer(palette="Set3")
+#scale_colour_manual(values=c("cornflowerblue","brown","deeppink2","darksalmon","darkseagreen","azure3","darkorange2","cyan2","chartreuse"))
+```
