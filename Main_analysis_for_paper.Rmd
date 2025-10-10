@@ -1,0 +1,654 @@
+---
+title: "Coding for review mills"
+author: "Dorothy Bishop"
+date: "2025-08-09"
+output: html_document
+---
+last revision 28th Sept
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(here)
+require(TSDT) #for unfactor function ?may not be used
+require(stringr)
+library(reshape) #for melt function for geom
+require(lubridate)
+library("xlsx") #read and write xlsx files
+
+```
+
+Main files that we need for this:
+indexdf is the original file from Maria that has one row per review, with biblio information about the article, wayback link to the reviews, and also lists the reviewer, original boilerplate codes, PMIDs and whether they were cited.
+
+We prune it so we just have the required columns
+
+Then we change the names of reviewers to match PMID format
+
+There is option to remove reviewers who did just one review
+
+Finally we make a list of the reviewers and count how many reviews each did.
+
+```{r readindexdf}
+
+indexdf <- read.xlsx("Data set 7 Oct- Gaming the peer review system.xlsx",sheetIndex=1)
+#Between 3 and 5 Oct changed C066; it was a review with only 2 sentences, so new one selected
+
+
+#we'll cut out unwanted columns
+wantcols <- c('ID','REVIEWER','REVIEWED.ARTICLE.JOURNAL','REVIEWED.ARTICLE.PUBLISHER','REVIEWED.ARTICLE.DOI','Publication.date..dd.mm.yyyy.',
+             'PMIDs.mentioned','PMID.in.final.version.refs','coerced..9.for.resisted.','comparison.rev','Nrev.in.target.set','revmilled')
+indexdf<-indexdf[,wantcols]
+names(indexdf)<-c('ID','Reviewer','Journal','Publisher','DOI','Date','PMID','cited', 'coerced','comparison.rev','NrevThisArticle','revmill.ed')
+#remove blank row
+w<-which(is.na(indexdf$Reviewer)) #remove blank and duplicate cases, all marked n/a
+if(length(w)>0){
+indexdf<-indexdf[-w,]}
+
+# w<-which(is.numeric(indexdf$ID))
+# if(length(w)>0){
+# indexdf<-indexdf[-w,]}
+
+
+indexdf$Reviewer<-case_match(indexdf$Reviewer, "Andrea Giannini"  ~ "Giannini A",
+                        "Ottavia D'Oria"  ~ "D'Oria O",
+                         "Giorgio Bogani" ~ "Bogani G",
+                        "Violante Di Donato" ~"Di Donato V",
+                        "Antonio Simone Laganà" ~ "Laganà AS",
+                        "Fabrizio Signore" ~ "Signore F",
+                        "Ilaria Cuccu" ~ "Cuccu I",
+                        "Silvia Ganduscio" ~ "Ganduscio S",
+                        "Tullio Golia D'Augè" ~ "D'Augè TG",
+                        "Felice Sorrentino"~"Sorrentino F",
+                        "Andrea Etrusco" ~ "Etrusco A",
+                        "Veronica Lumia" ~"Lumia V",
+                        "Gaetano Riemma" ~"Riemma G",
+                        "Doriana Lucchese"~"Lucchese D", 
+                        "Giuseppe Gullo" ~"Gullo G",
+                        "Salvatore Insinga" ~ "Insinga S",
+                        "Pietro Serra" ~ "Serra P",
+                        "Alessandra Lopez" ~ "Lopez A",
+                       .default = "X_Anon")
+allrevstable<-table(indexdf$Reviewer)
+fulldf<-indexdf
+Nrevbyarticle <- table(fulldf$NrevThisArticle)
+w<-which(fulldf$PMID=='none')
+length(w) #These are reviews with no coercive citation (PMID or other)
+
+#Table of publishers/journals
+oneperarticle<-fulldf[fulldf$NrevThisArticle==1,]
+
+oneperarticle$journal2<-oneperarticle$Journal
+allj<-unique(oneperarticle$Journal)
+for(i in 1:length(allj)){
+  w<-which(oneperarticle$Journal==allj[i])
+  if(length(w)<3){
+    oneperarticle$journal2[w]<-paste0(oneperarticle$Publisher[w],": Other")
+  }
+    if(length(w)>2){
+    oneperarticle$journal2[w]<-paste0(oneperarticle$Publisher[w],": ",allj[i])
+  }
+}
+pubjtab<-table(oneperarticle$journal2)
+write.csv(pubjtab,'pubjtab.csv')
+
+############ select for quantitative analysis ########################
+#Select group for quantitative analysis (indexdf) by removing solos
+#Remove reviewers with just one review if removesolo =1
+removesolo<-1
+if(removesolo==1){
+  solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Ganduscio S','Lumia V','Insinga S') 
+
+  for (s in 1:length(solorevs)){
+    w<-which(indexdf$Reviewer == solorevs[s])
+    if(length(w)>0){
+    indexdf<-indexdf[-w,]
+    }
+  }
+}
+
+myrevs<-unique(indexdf$Reviewer)
+
+nrev<-length(myrevs)
+trev <- table(indexdf$Reviewer)
+Nbyrev<-as.vector(trev) #This has the N reviews done by each reviewer, in same order as codetab
+
+tcon<-as.data.frame.matrix(table(indexdf$comparison.rev,indexdf$Reviewer))
+write.xlsx(tcon,'Nconrevs.xlsx')
+w<-which(row.names(tcon)=='n/a') #find row for those without comparison
+#remove anons reviewer from target set which are in last col
+noncon<-tcon[w,1:(ncol(tcon)-1)]
+allrev<-Nbyrev[1:(length(Nbyrev)-1)]
+propcon<-(allrev-noncon)/allrev
+sum(noncon)/sum(allrev) #total proportion of reviews with comparison
+
+```
+
+Next file is the one with a line for each comment in each review, all stacked together for the target set.
+This is some version of allrevs, and is xlsx format.
+We read the first sheet as coded_df
+
+NB. 7 October; we now read long file with R and C cases stacked.
+
+The second sheet has the boilerplate codes defined, and includes columns for the original letter codes and the new codes.
+The new codes for many sections have several numbered subtypes. 
+We can read those in to get counts for subtypes, but later we drop the number so we have coarse codes.
+
+
+
+```{r recodebigfile_and_boiler}
+coded_df <- read.xlsx('allrevsRC_071025.xlsx',sheetName="Reviews")
+boilercode<-read.xlsx('allrevsRC_071025.xlsx',sheetName="boiler10")
+
+#remove blank rows from big file with all coded reports (coded_df)
+
+w<-which(is.na(coded_df$final))
+coded_df<-coded_df[-w,]
+NRcases<-length(which(coded_df$group=='R'))
+coded_df<-coded_df[-(NRcases+1),] #remove header row from controls
+###############
+
+#NB there are blanks in boilercode; select just rows with codes
+boileromit<-which(is.na(boilercode$orig.code)) 
+allboiler<-1:nrow(boilercode)
+if(length(boileromit>0)){
+boilerrows<-allboiler[-boileromit]}
+coded_df$nucode<-NA
+oldcodes<-unique(boilercode$orig.code)
+newcodes<-unique(boilercode$subtype)
+for (i in boilerrows){
+  w<-which(coded_df$final==boilercode$orig.code[i])
+  coded_df$nucode[w]<-boilercode$subtype[i]
+  w<-which(coded_df$final[1:NRcases]==boilercode$orig.code[i])
+  #NOTE : we are counting only for the R reviews!
+  boilercode$N.occurrence[i]<- length(w)
+
+}
+  
+write.xlsx(boilercode,'boilerwithN.xlsx',row.names=F)
+
+#Same as original boilercode but has N occurences added. 
+
+#Checking changes made by RA to original: do cross tabulation
+# write.xlsx(boilercode,'boilercode.xlsx')
+# t<-table(coded_df$code1,coded_df$codeRA)
+# write.csv(t,'codetab.csv')
+
+
+#check coding 
+checktab<-as.data.frame.matrix(table(coded_df$final,coded_df$nucode))
+```
+
+
+```{r addreviewerstocodeddf}
+#Need to add column specifying reviewer for each ID
+coded_df$Reviewer<-NA
+coded_df$numID<-as.integer(substring(coded_df$ID,2,4)) #ID for this review; we need to find each line with this number and add the reviewer
+#But exclude the Controls!
+coded_df$numID[coded_df$group=="C"]<-NA
+
+for(i in 1:nrow(indexdf)){
+  thisnum<-indexdf$ID[i]
+  w<-which(coded_df$numID==thisnum) #lines that below to this review
+  coded_df$Reviewer[w]<-indexdf$Reviewer[i]
+}
+
+coded_df$coarsecode<-substr(coded_df$nucode,1,1) #just the initial letter for coarsecode
+
+cittab<-table(coded_df$citationtype)
+#citation type is P for PMID, D for DOI, T for title and C for citation (with authors).
+#the number indicates the number of coerced citations. 
+
+btab<-as.data.frame.matrix(table(coded_df$ID,coded_df$final))
+w<-which(btab$D==0)
+
+codetab<-as.data.frame.matrix(table(coded_df$Reviewer,coded_df$coarsecode))
+
+
+
+codetab2<-codetab
+for (r in 1:nrow(codetab)){
+  codetab2[r,]<-codetab[r,]/Nbyrev[r] #N mentions of code per review
+}  
+```
+
+
+```{r domelt}
+mytab2<-as.matrix(codetab2)  #need matrix format for melt
+
+# Transform the matrix in long format
+dfm<- melt(mytab2)
+revnames<-levels(dfm$X1)
+
+colnames(dfm)[1:3] <- c("Reviewer", "code","N_per_review")
+#dfm$Reviewer is a factor.  We should be able to change levels to anonymise
+nl<-length(levels(dfm$Reviewer))
+levels(dfm$Reviewer) <- c(paste('Reviewer',1:(nl-1)),'Anon')
+revlabels<-paste0(levels(dfm$Reviewer)," \n(",Nbyrev," reviews)")
+
+
+```
+
+
+```{r revheatmap}
+# Plot heatmap with values
+# remove categories for unique codes
+# w<-c(which(dfm$code=='X1'),which(dfm$code=='X2'),which(dfm$code=='X3'))
+# if(length(w)>0){
+# dfm<-dfm[-w,]}
+#
+g <- ggplot(dfm, aes(y = Reviewer, x = code, fill = N_per_review, color=value)) +
+  geom_tile(color = "white") + # Create heatmap
+  #geom_text(color = "black", size = 3)+ # Add text labels
+  scale_fill_gradient(low = "beige", high = "darkblue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "", y = "") + 
+  labs(fill="N per review")+
+ # Labels
+   theme(axis.text.x = element_text(angle = 90, hjust = 1,size=6))+
+  theme_bw()
+  
+ggsave("heatmap_boilercodes.tif", dpi=300, width = 7, height = 3)
+
+```
+
+Analysis of PMIDs now appended here
+
+```{r pmidread}
+
+
+pmids <- read.xlsx('pmids/PMIDsfull_7_Oct.xlsx',sheetIndex=1)
+
+#pmids$PMID <-str_trim(pmids$PMID) #(not needed here but useful if strings have preceding or final blank space
+#pmids$Authors <- sub(';',',',pmids$Authors)
+
+namechange<-read.csv('name convert.csv') #hand crafted! may need to add
+for (i in 1:nrow(namechange)){
+  pmids$Authors<- sub(namechange$convert.from[i],namechange$convert.to[i],pmids$Authors) 
+
+}
+```
+Get a list of all the authors of these articles.
+Means splitting col 2 of the pmids; these are comma separated.
+NB some have semicolon before an organisation
+
+```{r getallaus}
+dfauth<-data.frame(matrix(NA,nrow=2000,ncol=2))
+names(dfauth)<-c('PMID','Author')
+
+pmids$Authors <- sub(';',',',pmids$Authors) #change semicolons to commas
+thisrow<-0
+for(i in 1:nrow(pmids)){
+    s<-unlist(str_split_1(pmids$Authors[i],","))
+    for (r in 1:length(s)){
+      dfauth$PMID[(thisrow+r)]<-pmids$PMID[i]
+      dfauth$Author[(thisrow+r)]<-trimws(s[r],whitespace="[ .]") #remove stop as well as space
+    }
+    thisrow<-thisrow+length(s)
+    
+}
+w<-which(dfauth$PMID>0)
+if(length(w)>0){
+dfauth<-dfauth[w,]#remove blanks
+}
+#double check for dodgy names
+for (i in 1:nrow(namechange)){
+  dfauth$Author<- sub(namechange$convert.from[i],namechange$convert.to[i],dfauth$Author) 
+
+}
+autab<-table(dfauth$Author)
+autab<-autab[order(autab,decreasing=T)]
+
+autab[1:20]
+mauthor<-data.frame(autab)
+write.xlsx(dfauth,"Individual_authors_PMID.xlsx") #scrutinise this in case any more duplicate names
+write.xlsx(mauthor,"Individual_author_counts.xlsx")
+
+```
+
+
+
+```{r pmidtable}
+
+mytab<-data.frame(matrix(0,nrow=nrow(pmids),ncol=(1+length(myrevs))))
+
+#Remarkably convoluted to get the N reviews for each reviewer in the right order! 
+#This seems to work without needing hard coding.
+revcounts<-as.data.frame.matrix(t(table(indexdf$Reviewer)))
+allrevs<-names(revcounts) #revs in the order we can use for creating name with count
+nrevs<-length(allrevs)    
+names(mytab)<-c('PMID',allrevs)
+mytab$PMID<-pmids$PMID
+revlabels<-paste0(allrevs," \n(",Nbyrev," reviews)")
+
+pmidlist<-as.vector(pmids$PMID)
+ for (i in 1:length(pmidlist)){
+  for (a in 1:length(allrevs)){
+  myset <- indexdf$PMID[indexdf$Reviewer==allrevs[a]]
+    for (s in 1:length(myset)){
+    g <- grep(pmidlist[i],myset[s])
+    if(length(g)>0)
+      {mytab[i,(a+1)]<-mytab[i,(a+1)]+1}
+    }
+  }
+ }
+
+
+```
+
+
+```{r formatformelt}
+
+thistab<-mytab #for PMIDS
+#add the N times PMID was cited in brackets after PMID
+thistab$coerced<-0
+thistab$cited<-0
+
+for (i in 1:nrow(indexdf)){
+  for(j in 1:length(pmidlist)){
+      g <- grep(pmidlist[j],indexdf$cited[i])
+        if(length(g)>0)  {thistab$cited[j]<-thistab$cited[j]+1}   
+      h <- grep(pmidlist[j],indexdf$PMID[i])
+      if(length(h)>0)  {thistab$coerced[j]<-thistab$coerced[j]+1}
+  }
+}
+#thistab$PMID<-paste0(thistab$PMID," (",thistab$cited,")") #incorporate cite count in PMID - not visible in plot so exclude
+
+thistab<-thistab[order(thistab$PMID),]
+
+plot(jitter(thistab$coerced),jitter(thistab$cited))
+#This is not for the paper, but is useful sanity check on results - should be close correlation
+
+# nc<-ncol(thistab) #then delete citecount column
+# thistab<-thistab[,-nc]
+
+mytab2<-as.matrix(thistab[,2:(nrevs+1)])  #need matrix format for melt
+
+
+```
+
+```{r domelt}
+# Transform the matrix in long format
+dfmp<- melt(mytab2)
+dfmp$X1<-thistab[,1] #copies labels into 1st col
+
+
+colnames(dfmp) <- c("x", "Reviewer","value")
+dfmp$isauthor<-0 #add new column
+#we'll now add a column that indicates if Reviewer was an author on that PMID
+for (i in 1:nrow(dfmp)){
+  thisrev<-dfmp$Reviewer[i] #this has the short reviewer names from PMID
+  thisp <- dfmp$x[i]
+  plen<-length(thisp)
+  s<-unlist(str_split_1(thisp," "))[[1]] #remove stuff after blank to get PMID
+  w<-which(dfauth$PMID == s)
+  theseauths<-dfauth$Author[w]
+  ww<-which(theseauths==thisrev)
+  if(length(ww)>0){
+  dfmp$isauthor[i]<-1
+  }
+
+}
+  #change isauthor to a colour
+dfmp$marker<-''
+dfmp$marker[dfmp$isauthor==1]<-'*'
+
+dfmp$valuex<-paste0(dfmp$value,dfmp$marker)
+
+#dfmp$Reviewer is a factor.  We should be able to change levels to anonymise
+nl<-length(levels(dfmp$Reviewer))
+levels(dfmp$Reviewer) <- c(paste('Reviewer',1:(nl-1)),'Anon')
+revlabels<-paste0(levels(dfmp$Reviewer)," \n(",Nbyrev," reviews)")
+names(dfmp)[3]<-'Count'
+dfmp$Count.old<-dfmp$Count
+dfmp$Count[dfmp$Count>5]<-5  #Truncating the count so 5+ becomes 5
+
+#gp + annotate("text", x = 240, y = 7.1, label = "+")
+
+
+```
+
+
+
+```{r revheatmap}
+# Plot heatmap with values -originalwith reviewers on x axis
+
+
+gp <- ggplot(dfmp, aes(y = Reviewer, x = x, fill = Count, label = marker,color=color)) +
+  geom_tile(color = "white") + # Create heatmap
+  geom_text(color = "black", size = 3)+ # Add text labels
+  scale_fill_gradient(low = "beige", high = "blue") + # Set color gradient
+  theme_minimal() + # Set theme
+  labs(x = "Articles with citation request", y = "") + 
+ scale_y_discrete(labels=revlabels)+ # Labels
+   theme_bw()+
+  theme(axis.text.x = element_blank())
+
+ggsave("heatmap_PMIDs.tif", dpi=300, width = 7, height = 4)
+
+
+```
+
+NB to make top of scale say 5+, I just opened this in preview and then added annotation!
+
+```{r sundrystats}
+jtab<-table(indexdf$Journal,indexdf$Publisher)
+write.xlsx(as.data.frame.matrix(jtab),'JournalPublist.xlsx',row.names=T)
+pubtab<-table(indexdf$Publisher)
+pubptab<-prop.table(pubtab)
+pubptab
+
+#Proportion of articles with successful coercions
+dfmp$coerced<-thistab$coerced
+dfmp$benefit<-dfmp$isauthor*dfmp$coerced
+bentab<-as.data.frame.matrix(table(dfmp$Reviewer,dfmp$benefit))
+bentab$tot<-rowSums(bentab[,2:13])
+
+```
+
+We need a comparison of length of reviews for target and comparisons, and also mean N non-boilerplate per review.
+
+The full set of reviews for both is in coded_df; group shows whether C or R
+
+```{r compareCR}
+myt<-table(coded_df$ID)
+myNstatement<-as.data.frame(myt)
+names(myNstatement)<-c('ID','Nstatements')
+myNstatement$ID<-as.character(myNstatement$ID) #need to unfactor!
+mynonB<-coded_df[coded_df$final=="£",]
+myt2<-as.data.frame(table(mynonB$ID))
+myt2$Var1<-as.character(myt2$Var1) #need to unfactor!
+myNstatement$nonB<-0
+for(i in 1:nrow(myNstatement)){
+  w<-which(myt2$Var1==myNstatement$ID[i])
+  if(length(w)>0){
+    myNstatement$nonB[i]<-myt2$Freq[w]
+  }
+}
+myNstatement$group<-substr(myNstatement$ID,1,1)
+
+#Summary tab has simple stats to report in paper
+summarytab<-myNstatement %>%
+       group_by(group) %>%
+       summarise_at(vars(starts_with("N")), list(mean=mean, sd=sd,min=min,max=max,N=length))
+```
+
+
+               
+Supplement 2 will have subset of columns of coded_df
+
+```{r createSupp2}
+
+wantcols<-c('row','group','ID','N','text','nucode','coarsecode','cites.to.other.authors_any.format','citationtype','Reviewer')
+
+supp2<-coded_df[,wantcols]
+names(supp2)[c(6,8,9)]<-c('finecode','cites_others','cites_revmill')
+supp2$reviewerN<-NA
+for (i in 1:(length(revnames)-1)){
+  w<-which(supp2$Reviewer==revnames[i])
+  supp2$reviewerN[w]<-paste0('Reviewer ',i)
+}
+w<-which(supp2$Reviewer=="X_Anon")
+supp2$reviewerN[w]<-'Anon'
+
+#for completeness also write the solorevs
+solorevs<-c('Lopez A','Lucchese D','Signore F','Sorrentino F','Riemma G','Serra P','Ganduscio S','Lumia V','Insinga S') #first mention of Insinga does't seem to pick him up! 
+
+origsolorevs<-c('Alessandra Lopez','Doriana Lucchese', 'Fabrizio Signore', 'Felice Sorrentino','Gaetano Riemma','Pietro Serra','Silvia Ganduscio','Veronica Lumia','Salvatore Insinga')
+fulldf<-fulldf[order(fulldf$ID),] #make sure all in order
+for (i in 1:length(solorevs)){
+  x<-which(fulldf$Reviewer==solorevs[i])
+  w<-fulldf$ID[x]
+  if(length(w)>0){
+  if(nchar(w)<3){w<-paste0("0",w)}
+  if(nchar(w)<3){w<-paste0("0",w)}
+ 
+  code<-paste0("R",w)
+  y<-which(supp2$ID==code)
+  supp2$Reviewer[y]<-solorevs[i]
+  supp2$reviewer[y]<-paste("Reviewer",(i+9)) #numbering for solos starts after 9
+  }
+}
+
+write.xlsx(supp2,"Supplement 2.xlsx")
+```
+
+```{r supp3_4}
+supp3<-codetab2
+row.names(supp3)<-revlabels
+write.xlsx(supp3,'Supplement 3.xlsx')
+
+supp4<-thistab[order(thistab$PMID),]
+addbit<-pmids[order(pmids$PMID),]
+supp4<-cbind(supp4,addbit)
+write.xlsx(supp4,'Supplement 4.xlsx')
+
+
+
+```
+NB Supplement 1 is a tidied up version of "Data set 7 Oct- Gaming the peer review system.xlsx"
+
+```{r numbercheckforpaper}
+#How many with comparison?
+mycomptab<-as.data.frame.matrix(table(fulldf$comparison.rev,fulldf$Reviewer))
+mycomptab<-mycomptab[,1:(ncol(mycomptab)-1)] #last col is Anon -remove
+x<-which(row.names(mycomptab)=="n/a")
+N0<-sum(mycomptab[x,])
+N1<-sum(mycomptab[-x,])
+write.xlsx(mycomptab,'rev by comp table.xlsx')
+
+
+text1<-paste0("For ",N1, " of ",( N0+N1)," nonanonymous articles in this target set, we identified a second review that was coded in the same way to act as a comparison set.")
+text1
+
+N3 <- nrow(fulldf)
+N4 <- length(unique(fulldf$DOI))
+N5 <- N3-length(grep("none",fulldf$PMID))
+N6 <- sum(table(fulldf$coerced)[2:7])
+
+text2 <-paste0("We identified a set of ", N3, " review mill reports that shared verbatim or highly similar “boilerplate” text from ", N4, "targeted articles. ", N5, " reports suggested citing at least one article which was co-authored by the reviewer or another member of the mill. Authors of ", N6, "articles complied with some or all suggestions for citation.")
+
+#N7 is citation requests that identify author. These are those coded C (for citation) - the number after C indicates how many requests of that type.
+#This was a real pain to code!
+cittab<-as.data.frame.matrix(table(coded_df$citationtype,coded_df$group))
+cittab$multiplier<-0
+n<-row.names(cittab)
+for (i in 1:12){
+  w<-str_count(n,as.character(i))*i  #w is a list that is 0 or the number searched for
+
+  cittab$multiplier<-cittab$multiplier+w #we have to add to existing value because of cases such as P1C1 which count as two
+}
+#Had to hand craft the one case with double digits!
+w<-which(row.names(cittab)=="T12")
+cittab$multiplier[w]<-12
+
+N7 = 10+1+9+1  #still handcoding this - from cittab!
+
+#now lump together by N cites
+lumped<-data.frame(matrix(0,nrow=12,ncol=2))
+names(lumped)[1:2]<-c('NcitesR','count')
+for (i in 1:12){
+  w<-which(cittab$multiplier==i)
+  lumped[i,1]<-i
+  lumped[i,2]<-sum(cittab$R[w])
+}
+lumped$totR<-lumped$NcitesR*lumped$count
+sum(lumped$totR) #all cites
+N8=lumped$count[2]
+
+N9 <- nrow(pmids[pmids$includes.revmiller,]) #those not by review miller excluded after reading PMIDS
+
+text3 <-paste0("All but ",(N3-N5), " of the ", N3,  " boilerplate reviews suggested at least one article for citation co-authored by the reviewer or another member of the review mill. In most reviews, the request for citation did not identify the authors of the recommended articles, but rather referred to them by PubMed ID number (PMID), Digital Object Identifier (DOI), or title; only ",N7," review reports gave any information about authors when suggesting a citation. The median number of requested citations was two (",N8," reviews), with a range from 1 to 12." )
+
+text4<-paste0("There were ", N9," individual articles suggested as coercive citations, with many articles suggested several times, including by different reviewer")
+
+tx<-as.data.frame.matrix(table(coded_df$nucode,coded_df$group))
+tots<-colSums(tx)
+Ztots<-tx[nrow(tx),]
+nonZtots<-tots-Ztots
+
+text5<-paste0("There were only ",nonZtots[1]," cases of boilerplate in ",tots[1]," coded comments in the comparison reviews, compared with ",nonZtots[2]," boilerplate coded comments out of ",tots[2]," coded comments in the target set reviews.")
+
+
+#This just gives numbers for citations to others for both groups
+table(coded_df$cites.to.other.authors_any.format,coded_df$group)
+
+pp<-supp4[supp4$includes.revmiller==1,]
+
+w<-sum(pp$cited)
+w1<-sum(pp$coerced)
+wp=round(100*w/w1,0)
+text6 <-paste0(" Of the remaining reviews, the final article was scrutinised to check if any of the suggested citations had been incorporated in the references. Of ", w," suggestions for citation, ",w1, " (",wp,"%) were included in the article; for the remaining ",(w1-w),", authors either challenged the suggestion (e.g. by stating the reference was not relevant) or ignored it.")
+
+```
+Look at timing of reviews
+
+```{r seeyear}
+fulldf$Year<-year(fulldf$Date)
+ytab<-as.data.frame.matrix(table(fulldf$Reviewer,fulldf$Year))
+
+write.xlsx(ytab,'YearRev.xlsx')
+
+w<-which(row.names(ytab) %in% allrevs)
+yytab<-ytab[w,]
+yytab<-yytab[1:(nrow(yytab)-1),]
+```
+```{r citationplot}
+whichplot<-'Publications'
+whichplot<-"Citations"
+cites<-read.xlsx("citation_counts_Dims/citations_publications_Dims.xlsx",sheetName=whichplot)
+names(cites)[1]<-'Year'
+cites<-cites[1:(nrow(cites)-1),] #remove 2025
+cites<-cites[-(1:2),]
+
+citelong<- melt(cites,id.vars='Year',variable.name='Reviewer',value.name='number')
+names(citelong)[2:3]<-c("Reviewer","N")
+
+firstyr<-vector()
+
+ 
+ 
+for (i in 1:nrow(yytab)){
+ firstyr[i]<-2018+(which(yytab[i,]>0))[1]
+
+}
+citelong$shape<-4
+citelong$size<-1
+for (i in 1:nrow(yytab)){  w<-intersect(which(citelong$Year==firstyr[i]),grep(as.character(i),citelong$Reviewer))
+citelong$shape[w]<-21
+citelong$size[w]<-2
+}
+citelong$shape<-as.factor(citelong$shape)
+citelong$size<-as.factor(citelong$size)
+gc<-ggplot(data=citelong, aes(x=Year, y=N, group=Reviewer)) +
+  geom_line(aes(color=Reviewer))+
+ # geom_point(aes(shape=shape,fill=Reviewer,colour=Reviewer,size=size))+
+    geom_point(aes(colour=Reviewer))+
+  ggtitle(whichplot)
+#scale_color_brewer(palette="Set3")
+#scale_colour_manual(values=c("cornflowerblue","brown","deeppink2","darksalmon","darkseagreen","azure3","darkorange2","cyan2","chartreuse"))
+
+
+ggsave("citations.tif", dpi=300, width = 6, height = 3)
+```
+
